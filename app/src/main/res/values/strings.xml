@@ -1,9 +1,9 @@
 <resources>
-    <string name="app_name">Anjem UNNES</string>
-    <string name="login_title">Masuk ke Anjem UNNES</string>
+    <string name="app_name">ANJEMKUY</string>
+    <string name="login_title">Masuk ke ANJEMKUY</string>
     <string name="login_subtitle">Layanan Ojek &amp; Kurir Khusus Kampus UNNES</string>
     <string name="btn_login">Masuk</string>
-    <string name="home_greeting">Halo, Mahasiswa UNNES!</string>
+    <string name="home_greeting">Halo, Nesss!</string>
     <string name="wallet_balance">Rp 45.000</string>
     <string name="service_anjem">Anjem Motor</string>
     <string name="service_kurir">Kurir Barang</string>

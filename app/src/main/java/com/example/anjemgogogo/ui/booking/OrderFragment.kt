@@ -806,115 +806,88 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         }.start()
     }
 
-    private fun generateRoadInterpolatedWaypoints(start: GeoPoint, end: GeoPoint): List<GeoPoint> {
-        val list = mutableListOf<GeoPoint>()
-        list.add(start)
-
-        val steps = 10
-        for (i in 1 until steps) {
-            val fraction = i.toDouble() / steps
-            val lat = start.latitude + (end.latitude - start.latitude) * fraction + (0.0005 * sin(fraction * Math.PI))
-            val lng = start.longitude + (end.longitude - start.longitude) * fraction + (0.0005 * cos(fraction * Math.PI))
-            list.add(GeoPoint(lat, lng))
-        }
-
-        list.add(end)
-        return list
-    }
-
-    private fun drawRoadRoutePolyline(waypoints: List<GeoPoint>, roadDistanceMeters: Double) {
-        routeLine = Polyline()
-        routeLine?.setPoints(waypoints)
-        routeLine?.outlinePaint?.color = Color.parseColor("#0087A8")
-        routeLine?.outlinePaint?.strokeWidth = 14f
-        routeLine?.outlinePaint?.strokeCap = Paint.Cap.ROUND
-        routeLine?.outlinePaint?.strokeJoin = Paint.Join.ROUND
-
-        binding.osmMapView.overlays.add(routeLine)
-        binding.osmMapView.invalidate()
-
-        calculateEstimateForDistance(roadDistanceMeters / 1000.0)
-    }
-
-    private fun getAddressFromGeoPoint(geoPoint: GeoPoint): String {
-        return try {
-            val geocoder = Geocoder(requireContext(), Locale.getDefault())
-            val addresses = geocoder.getFromLocation(geoPoint.latitude, geoPoint.longitude, 1)
-            if (!addresses.isNullOrEmpty()) {
-                val addr = addresses[0]
-                val street = addr.featureName ?: addr.thoroughfare ?: "Lokasi Sekaran"
-                val subLocality = addr.subLocality ?: addr.locality ?: "UNNES"
-                "$street, $subLocality"
-            } else {
-                "Area Sekaran (${String.format(Locale.US, "%.4f", geoPoint.latitude)}, ${String.format(Locale.US, "%.4f", geoPoint.longitude)})"
-            }
-        } catch (e: Exception) {
-            "Kampus UNNES (${String.format(Locale.US, "%.4f", geoPoint.latitude)}, ${String.format(Locale.US, "%.4f", geoPoint.longitude)})"
-        }
-    }
-
     private fun setupServiceToggle() {
-        val primaryColor = Color.parseColor("#0087A8")
-        val grayColor = Color.parseColor("#557382")
-
         binding.btnTypeMotor.setOnClickListener {
             selectedServiceType = "Motor"
             binding.btnTypeMotor.setBackgroundResource(R.drawable.bg_selected_primary)
-            binding.imgMotor.imageTintList = ColorStateList.valueOf(primaryColor)
-            binding.tvMotor.setTextColor(primaryColor)
+            binding.imgMotor.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.palette_normal))
+            binding.tvMotor.setTextColor(ContextCompat.getColor(requireContext(), R.color.palette_normal))
 
             binding.btnTypeKurir.setBackgroundResource(R.drawable.bg_border_card)
-            binding.imgKurir.imageTintList = ColorStateList.valueOf(grayColor)
-            binding.tvKurir.setTextColor(grayColor)
+            binding.imgKurir.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.text_secondary))
+            binding.tvKurir.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
 
-            binding.lblCatatan.text = "CATATAN UNTUK DRIVER (OPSIONAL)"
-            binding.etCatatan.hint = "Misal: Saya pakai jaket hitam, tunggu di depan pos..."
             updateMapOverlaysAndRoute()
         }
 
         binding.btnTypeKurir.setOnClickListener {
             selectedServiceType = "Kurir"
             binding.btnTypeKurir.setBackgroundResource(R.drawable.bg_selected_primary)
-            binding.imgKurir.imageTintList = ColorStateList.valueOf(primaryColor)
-            binding.tvKurir.setTextColor(primaryColor)
+            binding.imgKurir.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.palette_normal))
+            binding.tvKurir.setTextColor(ContextCompat.getColor(requireContext(), R.color.palette_normal))
 
             binding.btnTypeMotor.setBackgroundResource(R.drawable.bg_border_card)
-            binding.imgMotor.imageTintList = ColorStateList.valueOf(grayColor)
-            binding.tvMotor.setTextColor(grayColor)
+            binding.imgMotor.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.text_secondary))
+            binding.tvMotor.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
 
-            binding.lblCatatan.text = "DETAIL BARANG / TITIP BELI (CATATAN)"
-            binding.etCatatan.hint = "Misal: Beli Nasi Padang di Banaran & Es Teh manis"
             updateMapOverlaysAndRoute()
         }
     }
 
-    private fun calculateEstimateForDistance(distanceKmRaw: Double) {
-        val distanceKm = String.format(Locale.US, "%.1f", distanceKmRaw.coerceAtLeast(0.8)).toDouble()
+    private fun getAddressFromGeoPoint(point: GeoPoint): String {
+        try {
+            val geocoder = Geocoder(requireContext(), Locale.getDefault())
+            val addresses = geocoder.getFromLocation(point.latitude, point.longitude, 1)
+            if (!addresses.isNullOrEmpty()) {
+                val addr = addresses[0]
+                return addr.getAddressLine(0) ?: "${addr.featureName ?: "Lokasi"}, ${addr.subLocality ?: "UNNES"}"
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return String.format(Locale.getDefault(), "Lat: %.4f, Lng: %.4f", point.latitude, point.longitude)
+    }
 
-        val isSurgeZone = binding.spTujuan.text.toString().contains("Banaran", true)
-
-        val baseFare = if (selectedServiceType == "Motor") {
-            H3GeoUtils.calculateFare(distanceKm)
-        } else {
-            H3GeoUtils.calculateFare(distanceKm) + 3000.0
+    private fun drawRoadRoutePolyline(waypoints: List<GeoPoint>, distanceMeters: Double) {
+        if (!isAdded) return
+        if (routeLine != null) {
+            binding.osmMapView.overlays.remove(routeLine)
         }
 
-        val finalFare = if (isSurgeZone) baseFare * 1.3 else baseFare
-        val minutes = Math.round(distanceKm * 3.5).coerceAtLeast(2)
+        routeLine = Polyline().apply {
+            setPoints(waypoints)
+            outlinePaint.color = Color.parseColor("#0088CC")
+            outlinePaint.strokeWidth = 12f
+            outlinePaint.strokeCap = Paint.Cap.ROUND
+        }
 
-        val surgeTag = if (isSurgeZone) " (⚡ Surge 1.3x)" else ""
-        binding.tvJarak.text = "Estimasi Jarak: $distanceKm km (Real Map)"
+        binding.osmMapView.overlays.add(0, routeLine)
+        binding.osmMapView.invalidate()
+
+        val distanceKm = distanceMeters / 1000.0
+        val roundedDist = String.format(Locale.US, "%.1f", distanceKm)
+        val minutes = ((distanceKm / 25.0) * 60).toInt().coerceAtLeast(2)
+
+        val baseFare = if (selectedServiceType == "Motor") 5000 else 7000
+        val perKmRate = if (selectedServiceType == "Motor") 2500 else 3500
+        val totalPrice = baseFare + (distanceKm * perKmRate).toInt()
+        val formattedPrice = String.format(Locale("id", "ID"), "Rp %,d", totalPrice)
+
+        binding.tvJarak.text = "Estimasi Jarak: $roundedDist km (Real Map)"
         binding.tvWaktu.text = "Waktu tempuh sekitar $minutes menit"
-        binding.tvHarga.text = "Rp ${String.format(Locale.US, "%,.0f", finalFare)}$surgeTag"
+        binding.tvHarga.text = formattedPrice
     }
 
-    override fun onDestroyView() {
-        resetTripState()
-        super.onDestroyView()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        binding.osmMapView.onPause()
+    private fun generateRoadInterpolatedWaypoints(start: GeoPoint, end: GeoPoint): List<GeoPoint> {
+        val list = mutableListOf<GeoPoint>()
+        val steps = 25
+        for (i in 0..steps) {
+            val fraction = i.toDouble() / steps
+            val lat = start.latitude + (end.latitude - start.latitude) * fraction
+            val lng = start.longitude + (end.longitude - start.longitude) * fraction
+            val curveOffset = sin(fraction * Math.PI) * 0.0015
+            list.add(GeoPoint(lat + curveOffset, lng - curveOffset))
+        }
+        return list
     }
 }

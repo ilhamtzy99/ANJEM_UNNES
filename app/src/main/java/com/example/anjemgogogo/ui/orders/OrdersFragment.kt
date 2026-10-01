@@ -9,14 +9,17 @@ import com.example.anjemgogogo.databinding.FragmentOrdersBinding
 
 class OrdersFragment : Fragment(R.layout.fragment_orders) {
 
-    private lateinit var binding: FragmentOrdersBinding
+    private var _binding: FragmentOrdersBinding? = null
+    private val binding get() = _binding!!
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding = FragmentOrdersBinding.bind(view)
+        _binding = FragmentOrdersBinding.bind(view)
 
-        // Setup Bottom Navigation
+        // Tandai menu riwayat/orders sebagai item terpilih
         binding.bottomNavigation.selectedItemId = R.id.nav_orders
+
+        // Navigasi manual antar fragment
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_home -> {
@@ -35,5 +38,10 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                 else -> false
             }
         }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null // Mencegah memory leak pada Fragment
     }
 }

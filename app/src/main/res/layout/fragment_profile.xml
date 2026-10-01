@@ -61,7 +61,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="14dp"
-                    android:text="Muhammad Alifian"
+                    android:text="Muhammad Alden"
                     android:textColor="@color/white"
                     android:textSize="21sp"
                     android:textStyle="bold" />
@@ -71,7 +71,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="Teknik Informatika • Fakultas Teknik"
+                    android:text="Teknik Komputer • Fakultas Teknik"
                     android:textColor="@color/palette_light_active"
                     android:textSize="13sp" />
 
@@ -79,7 +79,7 @@
                     android:id="@+id/tvProfileEmail"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="alifian@students.unnes.ac.id"
+                    android:text="alden@students.unnes.ac.id"
                     android:visibility="gone" />
 
                 <TextView
@@ -128,18 +128,16 @@
                         android:paddingEnd="16dp">
 
                         <ImageView
-                            android:layout_width="38dp"
-                            android:layout_height="38dp"
-                            android:background="@drawable/bg_icon_tile"
+                            android:layout_width="50dp"
+                            android:layout_height="40dp"
                             android:contentDescription="@null"
                             android:padding="9dp"
-                            android:src="@drawable/ic_whatsapp"
-                            app:tint="@color/palette_normal" />
+                            android:src="@drawable/ic_wa"/>
 
                         <TextView
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="14dp"
+                            android:layout_marginStart="0dp"
                             android:layout_weight="1"
                             android:text="Nomor WhatsApp"
                             android:textColor="@color/text_primary"
@@ -178,18 +176,16 @@
                         android:paddingEnd="16dp">
 
                         <ImageView
-                            android:layout_width="38dp"
-                            android:layout_height="38dp"
-                            android:background="@drawable/bg_icon_tile"
+                            android:layout_width="50dp"
+                            android:layout_height="50dp"
                             android:contentDescription="@null"
                             android:padding="9dp"
-                            android:src="@drawable/ic_school"
-                            app:tint="@color/palette_normal" />
+                            android:src="@drawable/ic_unnes"/>
 
                         <TextView
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="14dp"
+                            android:layout_marginStart="0dp"
                             android:layout_weight="1"
                             android:text="Info Akademik UNNES"
                             android:textColor="@color/text_primary"
@@ -228,20 +224,18 @@
                         android:paddingEnd="16dp">
 
                         <ImageView
-                            android:layout_width="38dp"
-                            android:layout_height="38dp"
-                            android:background="@drawable/bg_icon_tile"
+                            android:layout_width="50dp"
+                            android:layout_height="50dp"
                             android:contentDescription="@null"
                             android:padding="9dp"
-                            android:src="@drawable/ic_shield"
-                            app:tint="@color/palette_normal" />
+                            android:src="@drawable/ic_kontakdarurat"/>
 
                         <TextView
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="14dp"
+                            android:layout_marginStart="0dp"
                             android:layout_weight="1"
-                            android:text="Kontak Darurat Kampus"
+                            android:text="Kontak Darurat"
                             android:textColor="@color/text_primary"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -272,24 +266,21 @@
                         android:paddingEnd="16dp">
 
                         <ImageView
-                            android:layout_width="38dp"
-                            android:layout_height="38dp"
-                            android:background="@drawable/bg_icon_tile"
+                            android:layout_width="50dp"
+                            android:layout_height="50dp"
                             android:contentDescription="@null"
                             android:padding="9dp"
-                            android:src="@drawable/ic_info"
-                            app:tint="@color/palette_normal" />
+                            android:src="@drawable/ic_riwayat"/>
 
                         <TextView
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="14dp"
+                            android:layout_marginStart="0dp"
                             android:layout_weight="1"
                             android:text="Syarat &amp; Ketentuan"
                             android:textColor="@color/text_primary"
                             android:textSize="14sp"
                             android:textStyle="bold" />
-
 
                         <ImageView
                             android:layout_width="18dp"
