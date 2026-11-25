@@ -1,6 +1,8 @@
 package com.example.anjemgogogo.data.firebase
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.example.anjemgogogo.data.model.ChatMessage
 import com.example.anjemgogogo.data.model.DriverLocation
 import com.example.anjemgogogo.data.model.OrderModel
@@ -20,7 +22,8 @@ import com.google.firebase.database.Transaction
 import com.google.firebase.database.ValueEventListener
 
 /**
- * Central repository for Firebase Authentication & Firebase Realtime Database operations.
+ * Central repository for Firebase Authentication & Firebase Realtime Database operations
+ * supporting both Passenger ("customer") and Driver ("driver") users.
  */
 object FirebaseRepository {
 
@@ -36,9 +39,13 @@ object FirebaseRepository {
     private val driverLocationsRef: DatabaseReference get() = database.getReference("driver_locations")
     private val chatsRef: DatabaseReference get() = database.getReference("chats")
 
+    var cachedRole: String = UserProfile.ROLE_PASSENGER
+
     fun currentUser(): FirebaseUser? = auth.currentUser
 
     fun currentUid(): String? = auth.currentUser?.uid
+
+    fun isDriver(): Boolean = cachedRole == UserProfile.ROLE_DRIVER
 
     fun isUsingDummyConfig(): Boolean {
         return try {
@@ -60,14 +67,16 @@ object FirebaseRepository {
     fun signInWithEmail(
         email: String,
         password: String,
-        onResult: (Result<FirebaseUser>) -> Unit
+        role: String,
+        onResult: (Result<UserProfile>) -> Unit
     ) {
         auth.signInWithEmailAndPassword(email, password)
             .addOnSuccessListener { result ->
                 val user = result.user
                 if (user != null) {
-                    ensureUserProfile(user) {
-                        onResult(Result.success(user))
+                    ensureUserProfile(user, overrideRole = role) { profile ->
+                        cachedRole = profile.role
+                        onResult(Result.success(profile))
                     }
                 } else {
                     onResult(Result.failure(IllegalStateException("User tidak ditemukan.")))
@@ -82,7 +91,8 @@ object FirebaseRepository {
         name: String,
         email: String,
         password: String,
-        onResult: (Result<FirebaseUser>) -> Unit
+        role: String,
+        onResult: (Result<UserProfile>) -> Unit
     ) {
         auth.createUserWithEmailAndPassword(email, password)
             .addOnSuccessListener { result ->
@@ -93,8 +103,9 @@ object FirebaseRepository {
                         .build()
                     user.updateProfile(profileUpdates)
                         .addOnCompleteListener {
-                            ensureUserProfile(user, overrideName = name) {
-                                onResult(Result.success(user))
+                            ensureUserProfile(user, overrideName = name, overrideRole = role) { profile ->
+                                cachedRole = profile.role
+                                onResult(Result.success(profile))
                             }
                         }
                 } else {
@@ -108,15 +119,17 @@ object FirebaseRepository {
 
     fun signInWithGoogleIdToken(
         idToken: String,
-        onResult: (Result<FirebaseUser>) -> Unit
+        role: String,
+        onResult: (Result<UserProfile>) -> Unit
     ) {
         val credential = GoogleAuthProvider.getCredential(idToken, null)
         auth.signInWithCredential(credential)
             .addOnSuccessListener { result ->
                 val user = result.user
                 if (user != null) {
-                    ensureUserProfile(user) {
-                        onResult(Result.success(user))
+                    ensureUserProfile(user, overrideRole = role) { profile ->
+                        cachedRole = profile.role
+                        onResult(Result.success(profile))
                     }
                 } else {
                     onResult(Result.failure(IllegalStateException("Autentikasi Google gagal.")))
@@ -130,47 +143,78 @@ object FirebaseRepository {
     fun ensureUserProfile(
         user: FirebaseUser,
         overrideName: String? = null,
-        onComplete: (() -> Unit)? = null
+        overrideRole: String? = null,
+        onComplete: ((UserProfile) -> Unit)? = null
     ) {
         val userRef = usersRef.child(user.uid)
+        val fallbackRole = overrideRole ?: cachedRole
+        val fallbackName = overrideName?.takeIf { it.isNotBlank() }
+            ?: user.displayName?.takeIf { it.isNotBlank() }
+            ?: user.email?.substringBefore("@")
+            ?: "Mahasiswa UNNES"
+
         userRef.get()
             .addOnSuccessListener { snapshot ->
                 if (!snapshot.exists()) {
-                    val displayName = overrideName?.takeIf { it.isNotBlank() }
-                        ?: user.displayName?.takeIf { it.isNotBlank() }
-                        ?: user.email?.substringBefore("@")
-                        ?: "Mahasiswa UNNES"
-
                     val profile = UserProfile(
                         uid = user.uid,
-                        name = displayName,
+                        name = fallbackName,
                         email = user.email.orEmpty(),
                         photoUrl = user.photoUrl?.toString().orEmpty(),
                         phone = user.phoneNumber?.takeIf { it.isNotBlank() } ?: "-",
-                        nimOrFaculty = "Mahasiswa UNNES",
-                        balance = 45000L,
-                        role = "customer",
+                        nimOrFaculty = if (fallbackRole == UserProfile.ROLE_DRIVER) "Driver Mitra UNNES" else "Mahasiswa UNNES",
+                        balance = if (fallbackRole == UserProfile.ROLE_DRIVER) 0L else 45000L,
+                        role = fallbackRole,
+                        vehicleModel = "Honda Beat",
+                        vehiclePlate = "H 2341 XY",
+                        isOnline = fallbackRole == UserProfile.ROLE_DRIVER,
                         createdAt = System.currentTimeMillis()
                     )
-                    userRef.setValue(profile).addOnCompleteListener { onComplete?.invoke() }
+                    userRef.setValue(profile).addOnCompleteListener {
+                        cachedRole = profile.role
+                        onComplete?.invoke(profile)
+                    }
                 } else {
+                    val existing = snapshot.getValue(UserProfile::class.java) ?: UserProfile(uid = user.uid, name = fallbackName)
                     val updates = mutableMapOf<String, Any>()
                     if (!user.email.isNullOrBlank()) updates["email"] = user.email!!
                     if (user.photoUrl != null) updates["photoUrl"] = user.photoUrl.toString()
                     if (!overrideName.isNullOrBlank()) updates["name"] = overrideName
+                    if (!overrideRole.isNullOrBlank()) updates["role"] = overrideRole
+                    val finalProfile = existing.copy(
+                        email = user.email ?: existing.email,
+                        name = overrideName?.takeIf { it.isNotBlank() } ?: existing.name,
+                        role = overrideRole?.takeIf { it.isNotBlank() } ?: existing.role
+                    )
+                    cachedRole = finalProfile.role
                     if (updates.isNotEmpty()) {
-                        userRef.updateChildren(updates).addOnCompleteListener { onComplete?.invoke() }
+                        userRef.updateChildren(updates).addOnCompleteListener { onComplete?.invoke(finalProfile) }
                     } else {
-                        onComplete?.invoke()
+                        onComplete?.invoke(finalProfile)
                     }
                 }
             }
             .addOnFailureListener {
-                onComplete?.invoke()
+                val fallback = UserProfile(uid = user.uid, name = fallbackName, email = user.email.orEmpty(), role = fallbackRole)
+                cachedRole = fallback.role
+                onComplete?.invoke(fallback)
+            }
+    }
+
+    fun fetchUserRole(uid: String, onResult: (String) -> Unit) {
+        usersRef.child(uid).child("role").get()
+            .addOnSuccessListener { snap ->
+                val role = snap.getValue(String::class.java) ?: UserProfile.ROLE_PASSENGER
+                cachedRole = role
+                onResult(role)
+            }
+            .addOnFailureListener {
+                onResult(cachedRole)
             }
     }
 
     fun signOut() {
+        cachedRole = UserProfile.ROLE_PASSENGER
         auth.signOut()
     }
 
@@ -183,12 +227,14 @@ object FirebaseRepository {
         val ref = usersRef.child(uid)
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                onUpdate(snapshot.getValue(UserProfile::class.java))
+                val profile = snapshot.getValue(UserProfile::class.java)
+                if (profile != null && profile.role.isNotBlank()) {
+                    cachedRole = profile.role
+                }
+                onUpdate(profile)
             }
 
-            override fun onCancelled(error: DatabaseError) {
-                // Keep UI resilient on permission/network interruption
-            }
+            override fun onCancelled(error: DatabaseError) {}
         }
         ref.addValueEventListener(listener)
         return ListenerHandle { ref.removeEventListener(listener) }
@@ -212,7 +258,7 @@ object FirebaseRepository {
         val balanceRef = usersRef.child(uid).child("balance")
         balanceRef.runTransaction(object : Transaction.Handler {
             override fun doTransaction(currentData: MutableData): Transaction.Result {
-                val current = currentData.getValue(Long::class.java) ?: 45000L
+                val current = currentData.getValue(Long::class.java) ?: 0L
                 val updated = (current + delta).coerceAtLeast(0L)
                 currentData.value = updated
                 return Transaction.success(currentData)
@@ -240,7 +286,7 @@ object FirebaseRepository {
         onResult: (Result<OrderModel>) -> Unit
     ) {
         if (isUsingDummyConfig()) {
-            onResult(Result.failure(IllegalStateException("File app/google-services.json masih dummy. Ganti dengan google-services.json asli dari Firebase Console.")))
+            onResult(Result.failure(IllegalStateException("File app/google-services.json masih dummy.")))
             return
         }
         val key = ordersRef.push().key
@@ -255,7 +301,7 @@ object FirebaseRepository {
             updatedAt = now
         )
         var completed = false
-        val timeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        val timeoutHandler = Handler(Looper.getMainLooper())
         val timeoutRunnable = Runnable {
             if (!completed) {
                 completed = true
@@ -279,6 +325,48 @@ object FirebaseRepository {
                     onResult(Result.failure(e))
                 }
             }
+    }
+
+    fun acceptOrder(
+        orderId: String,
+        driver: UserProfile,
+        onResult: (Result<OrderModel>) -> Unit
+    ) {
+        val orderRef = ordersRef.child(orderId)
+        orderRef.runTransaction(object : Transaction.Handler {
+            override fun doTransaction(currentData: MutableData): Transaction.Result {
+                val order = currentData.getValue(OrderModel::class.java) ?: return Transaction.success(currentData)
+                if (order.status != OrderModel.STATUS_SEARCHING && order.driverId.isNotBlank()) {
+                    return Transaction.abort()
+                }
+                order.driverId = driver.uid
+                order.driverName = driver.name.ifBlank { "Driver Anjem" }
+                order.plateNumber = driver.vehiclePlate.ifBlank { "H 2341 XY" }
+                order.status = OrderModel.STATUS_DRIVER_TO_PICKUP
+                order.updatedAt = System.currentTimeMillis()
+                currentData.value = order
+                return Transaction.success(currentData)
+            }
+
+            override fun onComplete(
+                error: DatabaseError?,
+                committed: Boolean,
+                currentData: DataSnapshot?
+            ) {
+                if (error != null) {
+                    onResult(Result.failure(error.toException()))
+                } else if (!committed) {
+                    onResult(Result.failure(IllegalStateException("Orderan sudah diambil driver lain.")))
+                } else {
+                    val accepted = currentData?.getValue(OrderModel::class.java)
+                    if (accepted != null) {
+                        onResult(Result.success(accepted))
+                    } else {
+                        onResult(Result.failure(IllegalStateException("Order tidak ditemukan.")))
+                    }
+                }
+            }
+        })
     }
 
     fun updateOrderStatus(orderId: String, status: String) {
@@ -306,6 +394,23 @@ object FirebaseRepository {
         return ListenerHandle { ref.removeEventListener(listener) }
     }
 
+    fun observeAvailableOrders(
+        onUpdate: (List<OrderModel>) -> Unit
+    ): ListenerHandle {
+        val query: Query = ordersRef.orderByChild("status").equalTo(OrderModel.STATUS_SEARCHING)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = snapshot.children.mapNotNull { it.getValue(OrderModel::class.java) }
+                    .sortedByDescending { it.createdAt }
+                onUpdate(list)
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        query.addValueEventListener(listener)
+        return ListenerHandle { query.removeEventListener(listener) }
+    }
+
     fun observeUserOrders(
         uid: String,
         onUpdate: (List<OrderModel>) -> Unit
@@ -324,11 +429,31 @@ object FirebaseRepository {
         return ListenerHandle { query.removeEventListener(listener) }
     }
 
-    fun fetchLatestOrderForUser(
+    fun observeDriverOrders(
+        driverId: String,
+        onUpdate: (List<OrderModel>) -> Unit
+    ): ListenerHandle {
+        val query: Query = ordersRef.orderByChild("driverId").equalTo(driverId)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = snapshot.children.mapNotNull { it.getValue(OrderModel::class.java) }
+                    .sortedByDescending { it.createdAt }
+                onUpdate(list)
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        query.addValueEventListener(listener)
+        return ListenerHandle { query.removeEventListener(listener) }
+    }
+
+    fun fetchLatestOrderForCurrentRole(
         uid: String,
+        isDriver: Boolean,
         onResult: (OrderModel?) -> Unit
     ) {
-        ordersRef.orderByChild("customerId").equalTo(uid).get()
+        val field = if (isDriver) "driverId" else "customerId"
+        ordersRef.orderByChild(field).equalTo(uid).get()
             .addOnSuccessListener { snapshot ->
                 val latest = snapshot.children.mapNotNull { it.getValue(OrderModel::class.java) }
                     .maxByOrNull { it.createdAt }

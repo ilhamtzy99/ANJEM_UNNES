@@ -11,6 +11,7 @@ import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import com.example.anjemgogogo.R
 import com.example.anjemgogogo.data.firebase.FirebaseRepository
+import com.example.anjemgogogo.data.model.UserProfile
 import com.example.anjemgogogo.databinding.FragmentLoginBinding
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -32,12 +33,12 @@ class LoginFragment : Fragment(R.layout.fragment_login) {
                 val idToken = account?.idToken
                 if (!idToken.isNullOrBlank()) {
                     setLoading(true)
-                    FirebaseRepository.signInWithGoogleIdToken(idToken) { authResult ->
-                        if (!isAdded) return@signInWithGoogleIdToken
+                    FirebaseRepository.signInWithGoogleIdToken(idToken, selectedRole()) { authResult ->
+                        if (!isAdded || _binding == null) return@signInWithGoogleIdToken
                         setLoading(false)
-                        authResult.onSuccess {
+                        authResult.onSuccess { profile ->
                             Toast.makeText(requireContext(), "Login Google berhasil!", Toast.LENGTH_SHORT).show()
-                            navigateToHome()
+                            navigateByRole(profile.role)
                         }.onFailure { err ->
                             Toast.makeText(requireContext(), "Login Google gagal: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
                         }
@@ -55,9 +56,13 @@ class LoginFragment : Fragment(R.layout.fragment_login) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentLoginBinding.bind(view)
 
-        // Jika sudah login sebelumnya, langsung masuk ke Home
-        if (FirebaseRepository.currentUser() != null) {
-            navigateToHome()
+        val currentUser = FirebaseRepository.currentUser()
+        if (currentUser != null) {
+            setLoading(true)
+            FirebaseRepository.fetchUserRole(currentUser.uid) { role ->
+                if (!isAdded || _binding == null) return@fetchUserRole
+                navigateByRole(role)
+            }
             return
         }
 
@@ -89,24 +94,25 @@ class LoginFragment : Fragment(R.layout.fragment_login) {
             }
 
             setLoading(true)
+            val role = selectedRole()
             if (isRegisterMode) {
-                FirebaseRepository.registerWithEmail(name, email, password) { result ->
-                    if (!isAdded) return@registerWithEmail
+                FirebaseRepository.registerWithEmail(name, email, password, role) { result ->
+                    if (!isAdded || _binding == null) return@registerWithEmail
                     setLoading(false)
-                    result.onSuccess {
+                    result.onSuccess { profile ->
                         Toast.makeText(requireContext(), "Pendaftaran berhasil!", Toast.LENGTH_SHORT).show()
-                        navigateToHome()
+                        navigateByRole(profile.role)
                     }.onFailure { err ->
                         Toast.makeText(requireContext(), "Daftar gagal: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
                     }
                 }
             } else {
-                FirebaseRepository.signInWithEmail(email, password) { result ->
-                    if (!isAdded) return@signInWithEmail
+                FirebaseRepository.signInWithEmail(email, password, role) { result ->
+                    if (!isAdded || _binding == null) return@signInWithEmail
                     setLoading(false)
-                    result.onSuccess {
+                    result.onSuccess { profile ->
                         Toast.makeText(requireContext(), "Login berhasil!", Toast.LENGTH_SHORT).show()
-                        navigateToHome()
+                        navigateByRole(profile.role)
                     }.onFailure { err ->
                         Toast.makeText(requireContext(), "Login gagal: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
                     }
@@ -139,6 +145,14 @@ class LoginFragment : Fragment(R.layout.fragment_login) {
         }
     }
 
+    private fun selectedRole(): String {
+        return if (binding.rgLoginRole.checkedRadioButtonId == R.id.rbRoleDriver) {
+            UserProfile.ROLE_DRIVER
+        } else {
+            UserProfile.ROLE_PASSENGER
+        }
+    }
+
     private fun updateModeUi() {
         if (isRegisterMode) {
             binding.tilName.visibility = View.VISIBLE
@@ -152,6 +166,7 @@ class LoginFragment : Fragment(R.layout.fragment_login) {
     }
 
     private fun setLoading(loading: Boolean) {
+        if (_binding == null) return
         binding.btnLogin.isEnabled = !loading
         binding.btnGoogleSignIn.isEnabled = !loading
         binding.btnToRegister.isEnabled = !loading
@@ -166,7 +181,7 @@ class LoginFragment : Fragment(R.layout.fragment_login) {
         if (FirebaseRepository.isUsingDummyConfig()) {
             showConfigDialog(
                 "Firebase Belum Terhubung",
-                "File app/google-services.json masih berisi data dummy.\n\nSilakan:\n1. Buka Firebase Console dan buat/pilih proyek Anda.\n2. Aktifkan Authentication (Email & Google) dan Realtime Database.\n3. Unduh google-services.json asli dan ganti file di app/google-services.json."
+                "File app/google-services.json masih berisi data dummy."
             )
             return false
         }
@@ -181,11 +196,16 @@ class LoginFragment : Fragment(R.layout.fragment_login) {
             .show()
     }
 
-    private fun navigateToHome() {
+    private fun navigateByRole(role: String) {
         val navOptions = NavOptions.Builder()
             .setPopUpTo(R.id.loginFragment, true)
             .build()
-        findNavController().navigate(R.id.action_login_to_home, null, navOptions)
+        val actionId = if (role == UserProfile.ROLE_DRIVER) {
+            R.id.action_login_to_driver_home
+        } else {
+            R.id.action_login_to_home
+        }
+        findNavController().navigate(actionId, null, navOptions)
     }
 
     override fun onDestroyView() {

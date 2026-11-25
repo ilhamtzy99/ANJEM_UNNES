@@ -28,11 +28,19 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentOrdersBinding.bind(view)
 
+        val isDriver = FirebaseRepository.isDriver()
+        binding.tvSummarySpentLabel.text = if (isDriver) "Total pendapatan" else "Total pengeluaran"
+
         binding.bottomNavigation.selectedItemId = R.id.nav_orders
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_home -> {
-                    findNavController().navigate(R.id.action_orders_to_home)
+                    val homeAction = if (FirebaseRepository.isDriver()) {
+                        R.id.action_orders_to_driver_home
+                    } else {
+                        R.id.action_orders_to_home
+                    }
+                    findNavController().navigate(homeAction)
                     true
                 }
                 R.id.nav_orders -> true
@@ -59,9 +67,16 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
         }
 
         ordersListener?.remove()
-        ordersListener = FirebaseRepository.observeUserOrders(uid) { orders ->
-            if (!isAdded || _binding == null) return@observeUserOrders
-            renderOrders(orders)
+        ordersListener = if (FirebaseRepository.isDriver()) {
+            FirebaseRepository.observeDriverOrders(uid) { orders ->
+                if (!isAdded || _binding == null) return@observeDriverOrders
+                renderOrders(orders)
+            }
+        } else {
+            FirebaseRepository.observeUserOrders(uid) { orders ->
+                if (!isAdded || _binding == null) return@observeUserOrders
+                renderOrders(orders)
+            }
         }
     }
 
@@ -77,9 +92,9 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
 
         binding.tvEmptyOrders.visibility = View.GONE
         val validOrders = orders.filter { it.status != OrderModel.STATUS_CANCELLED }
-        val totalSpent = validOrders.sumOf { it.fare }
+        val totalAmount = validOrders.sumOf { it.fare }
         binding.tvTotalTrips.text = validOrders.size.toString()
-        binding.tvTotalSpent.text = formatRupiah(totalSpent)
+        binding.tvTotalSpent.text = formatRupiah(totalAmount)
 
         val inflater = LayoutInflater.from(requireContext())
         for (order in orders) {
@@ -104,7 +119,7 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                 OrderFragment.activeOrderId = order.orderId
                 if (order.driverName.isNotBlank()) OrderFragment.activeDriverName = order.driverName
                 if (order.plateNumber.isNotBlank()) OrderFragment.activePlateNumber = order.plateNumber
-                Toast.makeText(requireContext(), "Membuka chat pesanan (${statusLabel})", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), "Membuka chat pesanan ($statusLabel)", Toast.LENGTH_SHORT).show()
                 findNavController().navigate(R.id.action_orders_to_chat)
             }
 
@@ -114,7 +129,7 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
 
     private fun mapStatusDisplay(status: String): Triple<String, Int, Int> {
         return when (status) {
-            OrderModel.STATUS_WAITING -> Triple("Menunggu", R.drawable.bg_badge_yellow, R.color.amber_text)
+            OrderModel.STATUS_SEARCHING, OrderModel.STATUS_WAITING -> Triple("Menunggu Driver", R.drawable.bg_badge_yellow, R.color.amber_text)
             OrderModel.STATUS_DRIVER_TO_PICKUP -> Triple("Menuju Jemput", R.drawable.bg_badge_verified, R.color.palette_dark)
             OrderModel.STATUS_ON_TRIP -> Triple("Dalam Perjalanan", R.drawable.bg_badge_verified, R.color.palette_dark)
             OrderModel.STATUS_COMPLETED -> Triple("Selesai", R.drawable.bg_status_done, R.color.palette_dark)

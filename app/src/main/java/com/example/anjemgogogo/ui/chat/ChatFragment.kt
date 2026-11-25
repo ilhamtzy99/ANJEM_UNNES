@@ -22,18 +22,34 @@ class ChatFragment : Fragment(R.layout.fragment_chat) {
     private val timerHandler = Handler(Looper.getMainLooper())
     private var timerRunnable: Runnable? = null
     private var chatListener: FirebaseRepository.ListenerHandle? = null
+    private var orderHeaderListener: FirebaseRepository.ListenerHandle? = null
     private var activeChatOrderId: String = ""
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentChatBinding.bind(view)
 
-        binding.tvDriverName.text = "${OrderFragment.activeDriverName} (Anjem)"
-        binding.tvDriverStatus.text = "Honda Beat • ${OrderFragment.activePlateNumber} (★ 4.9)"
+        val isDriver = FirebaseRepository.isDriver()
+        if (isDriver) {
+            binding.tvDriverName.text = "Chat dengan Penumpang"
+            binding.tvDriverStatus.text = "Order Aktif Driver"
+            binding.etChatMessage.hint = "Ketik pesan untuk penumpang..."
+            binding.chipReply1.text = "📍 Saya sedang menuju titik jemput"
+            binding.chipReply2.text = "🛵 Saya sudah sampai di lokasi"
+            binding.chipReply3.text = "⏳ Mohon ditunggu sebentar ya kak"
+        } else {
+            binding.tvDriverName.text = "${OrderFragment.activeDriverName} (Anjem)"
+            binding.tvDriverStatus.text = "Honda Beat • ${OrderFragment.activePlateNumber} (★ 4.9)"
+        }
 
         binding.btnBackChat.setOnClickListener {
             if (!findNavController().navigateUp()) {
-                findNavController().navigate(R.id.action_chat_to_home)
+                val homeAction = if (FirebaseRepository.isDriver()) {
+                    R.id.action_chat_to_driver_home
+                } else {
+                    R.id.action_chat_to_home
+                }
+                findNavController().navigate(homeAction)
             }
         }
 
@@ -42,7 +58,7 @@ class ChatFragment : Fragment(R.layout.fragment_chat) {
                 val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:081234567890"))
                 startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(requireContext(), "Menghubungi Driver ${OrderFragment.activeDriverName} (0812-3456-7890)...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), "Menghubungi (0812-3456-7890)...", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -59,33 +75,56 @@ class ChatFragment : Fragment(R.layout.fragment_chat) {
         binding.chipReply3.setOnClickListener { sendLiveMessage(binding.chipReply3.text.toString()) }
 
         resolveAndObserveChat()
-        startPostTripTimer()
+        if (!isDriver) {
+            startPostTripTimer()
+        }
     }
 
     private fun resolveAndObserveChat() {
         val currentOrderId = OrderFragment.activeOrderId
         if (currentOrderId.isNotBlank()) {
+            attachOrderHeader(currentOrderId)
             attachChatListener(currentOrderId)
             return
         }
 
         val uid = FirebaseRepository.currentUid() ?: return
-        FirebaseRepository.fetchLatestOrderForUser(uid) { latestOrder ->
-            if (!isAdded || _binding == null) return@fetchLatestOrderForUser
+        val isDriver = FirebaseRepository.isDriver()
+        FirebaseRepository.fetchLatestOrderForCurrentRole(uid, isDriver) { latestOrder ->
+            if (!isAdded || _binding == null) return@fetchLatestOrderForCurrentRole
             if (latestOrder != null) {
                 OrderFragment.activeOrderId = latestOrder.orderId
-                if (latestOrder.driverName.isNotBlank()) {
-                    OrderFragment.activeDriverName = latestOrder.driverName
-                    binding.tvDriverName.text = "${latestOrder.driverName} (Anjem)"
-                }
-                if (latestOrder.plateNumber.isNotBlank()) {
-                    OrderFragment.activePlateNumber = latestOrder.plateNumber
-                    binding.tvDriverStatus.text = "Honda Beat • ${latestOrder.plateNumber} (★ 4.9)"
-                }
+                updateHeaderFromOrder(latestOrder.customerName, latestOrder.driverName, latestOrder.plateNumber, latestOrder.pickupName, latestOrder.destName)
                 attachChatListener(latestOrder.orderId)
             } else {
                 attachChatListener("support_$uid")
             }
+        }
+    }
+
+    private fun attachOrderHeader(orderId: String) {
+        orderHeaderListener?.remove()
+        orderHeaderListener = FirebaseRepository.observeOrder(orderId) { order ->
+            if (!isAdded || _binding == null || order == null) return@observeOrder
+            updateHeaderFromOrder(order.customerName, order.driverName, order.plateNumber, order.pickupName, order.destName)
+        }
+    }
+
+    private fun updateHeaderFromOrder(
+        customerName: String,
+        driverName: String,
+        plateNumber: String,
+        pickup: String,
+        dest: String
+    ) {
+        if (FirebaseRepository.isDriver()) {
+            binding.tvDriverName.text = customerName.ifBlank { "Penumpang UNNES" }
+            binding.tvDriverStatus.text = "$pickup → $dest"
+        } else {
+            val dName = driverName.ifBlank { OrderFragment.activeDriverName }
+            val dPlate = plateNumber.ifBlank { OrderFragment.activePlateNumber }
+            binding.tvDriverName.text = "$dName (Anjem)"
+            binding.tvDriverStatus.text = "Honda Beat • $dPlate (★ 4.9)"
         }
     }
 
@@ -94,7 +133,6 @@ class ChatFragment : Fragment(R.layout.fragment_chat) {
         chatListener?.remove()
         chatListener = FirebaseRepository.observeChatMessages(orderId) { messages ->
             if (!isAdded || _binding == null) return@observeChatMessages
-            // Pertahankan 2 child awal dari XML (pill keamanan + sapaan awal driver)
             val initialChildCount = 2.coerceAtMost(binding.chatMessageContainer.childCount)
             ChatBubbleHelper.renderMessages(
                 requireContext(),
@@ -112,40 +150,16 @@ class ChatFragment : Fragment(R.layout.fragment_chat) {
             Toast.makeText(requireContext(), "Menunggu koneksi ruang chat...", Toast.LENGTH_SHORT).show()
             return
         }
+        val senderRole = if (FirebaseRepository.isDriver()) "driver" else "customer"
         val userMsg = ChatMessage(
             orderId = activeChatOrderId,
             senderId = uid,
-            senderName = FirebaseRepository.currentUser()?.displayName ?: "Customer",
-            senderRole = "customer",
+            senderName = FirebaseRepository.currentUser()?.displayName ?: if (senderRole == "driver") "Driver" else "Customer",
+            senderRole = senderRole,
             text = text,
             timestamp = System.currentTimeMillis()
         )
-        FirebaseRepository.sendChatMessage(activeChatOrderId, userMsg) { sent ->
-            if (sent && isAdded) {
-                scheduleSimulatedDriverReply(activeChatOrderId)
-            }
-        }
-    }
-
-    private fun scheduleSimulatedDriverReply(orderId: String) {
-        timerHandler.postDelayed({
-            if (!isAdded || activeChatOrderId != orderId) return@postDelayed
-            val replies = listOf(
-                "Siap kak! Saya meluncur ke titik lokasi sekarang.",
-                "Baik kak, posisi saya sudah dekat sekitar 200 meter lagi.",
-                "Siap, saya tunggu di titik jemput depan pos ya kak.",
-                "Oke kak, siap laksanakan!"
-            )
-            val driverMsg = ChatMessage(
-                orderId = orderId,
-                senderId = OrderFragment.activeDriverId,
-                senderName = OrderFragment.activeDriverName,
-                senderRole = "driver",
-                text = replies.random(),
-                timestamp = System.currentTimeMillis()
-            )
-            FirebaseRepository.sendChatMessage(orderId, driverMsg)
-        }, 1200)
+        FirebaseRepository.sendChatMessage(activeChatOrderId, userMsg)
     }
 
     private fun startPostTripTimer() {
@@ -171,6 +185,8 @@ class ChatFragment : Fragment(R.layout.fragment_chat) {
     override fun onDestroyView() {
         chatListener?.remove()
         chatListener = null
+        orderHeaderListener?.remove()
+        orderHeaderListener = null
         timerRunnable?.let { timerHandler.removeCallbacks(it) }
         super.onDestroyView()
         _binding = null

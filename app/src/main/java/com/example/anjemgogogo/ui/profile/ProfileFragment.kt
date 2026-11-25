@@ -11,6 +11,7 @@ import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import com.example.anjemgogogo.R
 import com.example.anjemgogogo.data.firebase.FirebaseRepository
+import com.example.anjemgogogo.data.model.UserProfile
 import com.example.anjemgogogo.databinding.FragmentProfileBinding
 import com.example.anjemgogogo.ui.booking.OrderFragment
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -21,17 +22,17 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
     private var userListener: FirebaseRepository.ListenerHandle? = null
+    private var currentProfile: UserProfile? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentProfileBinding.bind(view)
 
-        // Setup Bottom Navigation
         binding.bottomNavigation.selectedItemId = R.id.nav_profile
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_home -> {
-                    findNavController().navigate(R.id.action_profile_to_home)
+                    navigateToRoleHome(clearBackStack = false)
                     true
                 }
                 R.id.nav_orders -> {
@@ -49,12 +50,25 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
 
         observeUserProfile()
 
-        binding.btnWhatsapp.setOnClickListener {
-            showEditPhoneDialog()
-        }
+        binding.btnWhatsapp.setOnClickListener { showEditPhoneDialog() }
+        binding.btnEditProfile.setOnClickListener { showEditProfileDialog() }
 
-        binding.btnEditProfile.setOnClickListener {
-            showEditProfileDialog()
+        binding.btnSwitchRole.setOnClickListener {
+            val uid = FirebaseRepository.currentUid() ?: return@setOnClickListener
+            val targetRole = if (FirebaseRepository.isDriver()) {
+                UserProfile.ROLE_PASSENGER
+            } else {
+                UserProfile.ROLE_DRIVER
+            }
+            val label = if (targetRole == UserProfile.ROLE_DRIVER) "Driver" else "Penumpang"
+            FirebaseRepository.updateUserFields(uid, mapOf("role" to targetRole)) { ok, _ ->
+                if (!isAdded || _binding == null) return@updateUserFields
+                if (ok) {
+                    FirebaseRepository.cachedRole = targetRole
+                    Toast.makeText(requireContext(), "Beralih ke Mode $label", Toast.LENGTH_SHORT).show()
+                    navigateToRoleHome(clearBackStack = true)
+                }
+            }
         }
 
         binding.btnBantuan.setOnClickListener {
@@ -98,19 +112,30 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
         userListener?.remove()
         userListener = FirebaseRepository.observeUserProfile(uid) { profile ->
             if (!isAdded || _binding == null || profile == null) return@observeUserProfile
+            currentProfile = profile
             val name = profile.name.ifBlank { "Mahasiswa UNNES" }
             binding.tvProfileName.text = name
             binding.tvProfileInitials.text = computeInitials(name)
-            binding.tvProfileNim.text = profile.nimOrFaculty.ifBlank { "Mahasiswa UNNES" }
             binding.tvProfilePhone.text = profile.phone.ifBlank { "-" }
             if (profile.email.isNotBlank()) {
                 binding.tvProfileEmail.text = profile.email
                 binding.tvProfileEmail.visibility = View.VISIBLE
             }
+
+            if (profile.role == UserProfile.ROLE_DRIVER) {
+                binding.tvProfileNim.text = "${profile.vehicleModel} • ${profile.vehiclePlate}"
+                binding.tvProfileRoleBadge.text = "🛵 Akun Driver Anjem Terverifikasi"
+                binding.btnSwitchRole.text = "🔄 Beralih ke Mode Penumpang"
+            } else {
+                binding.tvProfileNim.text = profile.nimOrFaculty.ifBlank { "Mahasiswa UNNES" }
+                binding.tvProfileRoleBadge.text = "🛡️ Akun Mahasiswa Terverifikasi"
+                binding.btnSwitchRole.text = "🔄 Beralih ke Mode Driver"
+            }
         }
     }
 
     private fun showEditProfileDialog() {
+        val isDriver = FirebaseRepository.isDriver()
         val container = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 24, 48, 8)
@@ -119,23 +144,42 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
             hint = "Nama Lengkap"
             setText(binding.tvProfileName.text)
         }
-        val etAcademic = EditText(requireContext()).apply {
-            hint = "Prodi / Fakultas (cth: Teknik Komputer • FT)"
-            setText(binding.tvProfileNim.text)
+        val etSecond = EditText(requireContext()).apply {
+            if (isDriver) {
+                hint = "Motor (cth: Honda Beat)"
+                setText(currentProfile?.vehicleModel ?: "Honda Beat")
+            } else {
+                hint = "Prodi / Fakultas (cth: Teknik Komputer • FT)"
+                setText(binding.tvProfileNim.text)
+            }
         }
+        val etPlate = if (isDriver) {
+            EditText(requireContext()).apply {
+                hint = "Plat Nomor (cth: H 2341 XY)"
+                setText(currentProfile?.vehiclePlate ?: "H 2341 XY")
+            }
+        } else null
+
         container.addView(etName)
-        container.addView(etAcademic)
+        container.addView(etSecond)
+        etPlate?.let { container.addView(it) }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Edit Profil & Info Akademik")
+            .setTitle(if (isDriver) "Edit Profil & Kendaraan Driver" else "Edit Profil & Info Akademik")
             .setView(container)
             .setPositiveButton("Simpan") { _, _ ->
                 val newName = etName.text.toString().trim()
-                val newAcademic = etAcademic.text.toString().trim()
+                val secondVal = etSecond.text.toString().trim()
                 val uid = FirebaseRepository.currentUid()
                 if (newName.isNotEmpty() && uid != null) {
                     val updates = mutableMapOf<String, Any>("name" to newName)
-                    if (newAcademic.isNotEmpty()) updates["nimOrFaculty"] = newAcademic
+                    if (isDriver) {
+                        if (secondVal.isNotEmpty()) updates["vehicleModel"] = secondVal
+                        val plateVal = etPlate?.text?.toString()?.trim().orEmpty()
+                        if (plateVal.isNotEmpty()) updates["vehiclePlate"] = plateVal
+                    } else if (secondVal.isNotEmpty()) {
+                        updates["nimOrFaculty"] = secondVal
+                    }
                     FirebaseRepository.updateUserFields(uid, updates) { ok, err ->
                         if (!isAdded) return@updateUserFields
                         if (ok) {
@@ -178,6 +222,22 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
             }
             .setNegativeButton("Batal", null)
             .show()
+    }
+
+    private fun navigateToRoleHome(clearBackStack: Boolean) {
+        val actionId = if (FirebaseRepository.isDriver()) {
+            R.id.action_profile_to_driver_home
+        } else {
+            R.id.action_profile_to_home
+        }
+        if (clearBackStack) {
+            val navOptions = NavOptions.Builder()
+                .setPopUpTo(R.id.nav_graph, true)
+                .build()
+            findNavController().navigate(actionId, null, navOptions)
+        } else {
+            findNavController().navigate(actionId)
+        }
     }
 
     private fun performLogout() {

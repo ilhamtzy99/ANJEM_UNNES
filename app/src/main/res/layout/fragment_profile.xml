@@ -84,6 +84,7 @@
                     android:visibility="gone" />
 
                 <TextView
+                    android:id="@+id/tvProfileRoleBadge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="14dp"
@@ -294,6 +295,23 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- ===== GANTI MODE ===== -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSwitchRole"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginStart="20dp"
+                android:layout_marginEnd="20dp"
+                android:layout_marginTop="20dp"
+                android:text="🔄 Beralih ke Mode Driver"
+                android:textColor="@color/palette_dark"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                app:cornerRadius="16dp"
+                app:strokeColor="@color/palette_normal"
+                app:strokeWidth="1.5dp" />
+
             <!-- ===== KELUAR ===== -->
             <LinearLayout
                 android:id="@+id/btnLogout"
@@ -301,7 +319,7 @@
                 android:layout_height="54dp"
                 android:layout_marginStart="20dp"
                 android:layout_marginEnd="20dp"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="12dp"
                 android:background="@drawable/bg_logout_button"
                 android:clickable="true"
                 android:focusable="true"

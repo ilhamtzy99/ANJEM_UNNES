@@ -13,6 +13,9 @@
         <action
             android:id="@+id/action_login_to_home"
             app:destination="@id/homeFragment" />
+        <action
+            android:id="@+id/action_login_to_driver_home"
+            app:destination="@id/driverHomeFragment" />
     </fragment>
 
     <fragment
@@ -32,6 +35,28 @@
         <action
             android:id="@+id/action_home_to_chat"
             app:destination="@id/chatFragment" />
+        <action
+            android:id="@+id/action_home_to_driver_home"
+            app:destination="@id/driverHomeFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/driverHomeFragment"
+        android:name="com.example.anjemgogogo.ui.driver.DriverHomeFragment"
+        android:label="Driver Home"
+        tools:layout="@layout/fragment_driver_home">
+        <action
+            android:id="@+id/action_driver_home_to_orders"
+            app:destination="@id/ordersFragment" />
+        <action
+            android:id="@+id/action_driver_home_to_chat"
+            app:destination="@id/chatFragment" />
+        <action
+            android:id="@+id/action_driver_home_to_profile"
+            app:destination="@id/profileFragment" />
+        <action
+            android:id="@+id/action_driver_home_to_home"
+            app:destination="@id/homeFragment" />
     </fragment>
 
     <fragment
@@ -52,6 +77,9 @@
         <action
             android:id="@+id/action_chat_to_home"
             app:destination="@id/homeFragment" />
+        <action
+            android:id="@+id/action_chat_to_driver_home"
+            app:destination="@id/driverHomeFragment" />
     </fragment>
 
     <fragment
@@ -62,6 +90,9 @@
         <action
             android:id="@+id/action_orders_to_home"
             app:destination="@id/homeFragment" />
+        <action
+            android:id="@+id/action_orders_to_driver_home"
+            app:destination="@id/driverHomeFragment" />
         <action
             android:id="@+id/action_orders_to_profile"
             app:destination="@id/profileFragment" />
@@ -78,6 +109,9 @@
         <action
             android:id="@+id/action_profile_to_home"
             app:destination="@id/homeFragment" />
+        <action
+            android:id="@+id/action_profile_to_driver_home"
+            app:destination="@id/driverHomeFragment" />
         <action
             android:id="@+id/action_profile_to_orders"
             app:destination="@id/ordersFragment" />

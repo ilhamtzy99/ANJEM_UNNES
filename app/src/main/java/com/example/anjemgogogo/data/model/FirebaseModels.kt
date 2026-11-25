@@ -11,9 +11,17 @@ data class UserProfile(
     var phone: String = "-",
     var nimOrFaculty: String = "Mahasiswa UNNES",
     var balance: Long = 45000L,
-    var role: String = "customer",
+    var role: String = ROLE_PASSENGER, // "customer" | "driver"
+    var vehicleModel: String = "Honda Beat",
+    var vehiclePlate: String = "H 2341 XY",
+    var isOnline: Boolean = false,
     var createdAt: Long = 0L
-)
+) {
+    companion object {
+        const val ROLE_PASSENGER = "customer"
+        const val ROLE_DRIVER = "driver"
+    }
+}
 
 @IgnoreExtraProperties
 data class OrderModel(
@@ -34,11 +42,12 @@ data class OrderModel(
     var distanceKm: Double = 0.0,
     var fare: Long = 0L,
     var paymentMethod: String = "KampusPay",
-    var status: String = STATUS_WAITING,
+    var status: String = STATUS_SEARCHING,
     var createdAt: Long = 0L,
     var updatedAt: Long = 0L
 ) {
     companion object {
+        const val STATUS_SEARCHING = "WAITING_DRIVER"
         const val STATUS_WAITING = "WAITING_CONFIRMATION"
         const val STATUS_DRIVER_TO_PICKUP = "DRIVER_TO_PICKUP"
         const val STATUS_ON_TRIP = "TRIP_TO_DESTINATION"

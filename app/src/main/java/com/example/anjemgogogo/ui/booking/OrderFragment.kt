@@ -1,9 +1,11 @@
 package com.example.anjemgogogo.ui.booking
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.Paint
 import android.location.Geocoder
 import android.os.Bundle
@@ -16,14 +18,11 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.toColorInt
-import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.example.anjemgogogo.R
 import com.example.anjemgogogo.data.firebase.FirebaseRepository
 import com.example.anjemgogogo.data.model.ChatMessage
-import com.example.anjemgogogo.data.model.DriverLocation
 import com.example.anjemgogogo.data.model.OrderModel
 import com.example.anjemgogogo.databinding.FragmentOrderBinding
 import com.example.anjemgogogo.ui.chat.ChatBubbleHelper
@@ -58,8 +57,8 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     companion object {
         var tripPhase = TripPhase.IDLE
         var activeOrderId = ""
-        var activeDriverId = "driver_ahmad_fauzi"
-        var activeDriverName = "Ahmad Fauzi"
+        var activeDriverId = ""
+        var activeDriverName = "Driver Anjem"
         var activePlateNumber = "H 2341 XY"
         var activeServiceName = "Anjem Motor"
         var activeJemput = ""
@@ -71,8 +70,8 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     private var _binding: FragmentOrderBinding? = null
     private val binding get() = _binding!!
 
-    private var selectedServiceType = "Motor" // "Motor" or "Kurir"
-    private var isSatelliteMode = false // Toggle between Street & Satellite
+    private var selectedServiceType = "Motor"
+    private var isSatelliteMode = false
     private var lastDistanceKm: Double = 1.0
     private var lastFare: Long = 7500L
     private var activePaymentMethod: String = "KampusPay"
@@ -82,12 +81,12 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     private var orderListener: FirebaseRepository.ListenerHandle? = null
     private var driverLocListener: FirebaseRepository.ListenerHandle? = null
     private var overlayChatListener: FirebaseRepository.ListenerHandle? = null
+    private var searchingDialog: AlertDialog? = null
 
-    // Dynamic coordinates chosen by user (Defaults to GPS)
     private var pickupGeoPoint = GeoPoint(-7.0475, 110.4072) // Gerbang Utama UNNES
     private var destinationGeoPoint = GeoPoint(-7.0531, 110.4085) // Banaran
 
-    private var targetSettingField = "jemput" // "jemput" or "tujuan"
+    private var targetSettingField = "jemput"
     private var isProgrammaticTextUpdate = false
 
     private var markerPickup: Marker? = null
@@ -96,14 +95,10 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     private var routeLine: Polyline? = null
     private var currentWaypoints: List<GeoPoint> = emptyList()
 
-    // Live tracking animation state
     private var isTrackingActive = false
-    private val trackingHandler = Handler(Looper.getMainLooper())
-    private var trackingRunnable: Runnable? = null
     private val postTripHandler = Handler(Looper.getMainLooper())
     private var postTripRunnable: Runnable? = null
 
-    // Debounce Handler to prevent map scrolling lag
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingDebounceRunnable: Runnable? = null
 
@@ -119,7 +114,6 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentOrderBinding.bind(view)
 
-        // Initialize OSMDroid Configuration with valid package User-Agent to comply with tile policy
         val ctx = requireContext().applicationContext
         Configuration.getInstance().userAgentValue = "Mozilla/5.0 (Android; Mobile) AnjemUNNES/1.0 (${ctx.packageName})"
         Configuration.getInstance().load(ctx, ctx.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
@@ -130,8 +124,13 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         setupOverlayChatListeners()
         observeUserBalance()
 
-        // Activate GPS location for default pickup
         checkLocationPermissionAndMove()
+
+        binding.cardMapHeader.setOnClickListener {
+            if (activeOrderId.isNotBlank() && activeDriverId.isNotBlank() && tripPhase != TripPhase.IDLE) {
+                binding.chatOverlayContainer.visibility = View.VISIBLE
+            }
+        }
 
         binding.btnToggleMapStyle.setOnClickListener {
             isSatelliteMode = !isSatelliteMode
@@ -195,7 +194,6 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
         binding.btnBackOverlayChat.setOnClickListener {
             binding.chatOverlayContainer.visibility = View.GONE
-            showInitialConfirmationDialog()
         }
 
         binding.btnOverlaySendChat.setOnClickListener {
@@ -240,50 +238,18 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         val msg = ChatMessage(
             orderId = activeOrderId,
             senderId = uid,
-            senderName = FirebaseRepository.currentUser()?.displayName ?: "Customer",
+            senderName = FirebaseRepository.currentUser()?.displayName ?: "Penumpang",
             senderRole = "customer",
             text = message,
             timestamp = System.currentTimeMillis()
         )
-        FirebaseRepository.sendChatMessage(activeOrderId, msg) { sent ->
-            if (sent && isAdded && _binding != null) {
-                simulateOverlayDriverReply(activeOrderId)
-            }
-        }
-    }
-
-    private fun simulateOverlayDriverReply(orderId: String) {
-        mainHandler.postDelayed({
-            if (!isAdded || _binding == null || activeOrderId != orderId) return@postDelayed
-            val replies = listOf(
-                "Siap kak! Saya meluncur ke titik lokasi sekarang.",
-                "Baik kak, posisi saya sudah dekat sekitar 200 meter lagi.",
-                "Siap, saya tunggu di titik jemput depan pos ya kak.",
-                "Oke kak, siap laksanakan!"
-            )
-            val driverMsg = ChatMessage(
-                orderId = orderId,
-                senderId = activeDriverId,
-                senderName = activeDriverName,
-                senderRole = "driver",
-                text = replies.random(),
-                timestamp = System.currentTimeMillis()
-            )
-            FirebaseRepository.sendChatMessage(orderId, driverMsg)
-        }, 1000)
+        FirebaseRepository.sendChatMessage(activeOrderId, msg)
     }
 
     override fun onResume() {
         super.onResume()
         if (isAdded && !isDetached && _binding != null) {
             binding.osmMapView.onResume()
-            if (tripPhase == TripPhase.WAITING_CONFIRMATION && binding.chatOverlayContainer.visibility != View.VISIBLE) {
-                view?.postDelayed({
-                    if (isAdded && !isDetached && _binding != null && tripPhase == TripPhase.WAITING_CONFIRMATION) {
-                        showInitialConfirmationDialog()
-                    }
-                }, 250)
-            }
         }
     }
 
@@ -306,22 +272,14 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         activeCatatan = binding.etCatatan.text.toString().trim()
         activeServiceName = if (selectedServiceType == "Motor") "Anjem Motor" else "Kurir / Titip Beli"
         activePaymentMethod = if (binding.rgPayment.checkedRadioButtonId == R.id.rbCash) "Tunai" else "KampusPay"
-
-        val driverIds = listOf("driver_ahmad_fauzi", "driver_bayu_pratama", "driver_rizki_mahendra", "driver_eko_prasetyo")
-        val driverNames = listOf("Ahmad Fauzi", "Bayu Pratama", "Rizki Mahendra", "Eko Prasetyo")
-        val plates = listOf("H 2341 XY", "H 5432 AB", "H 1289 ZC", "H 9876 KL")
-        val randomIdx = driverNames.indices.random()
-        activeDriverId = driverIds[randomIdx]
-        activeDriverName = driverNames[randomIdx]
-        activePlateNumber = plates[randomIdx]
-        binding.tvOverlayDriverName.text = "$activeDriverName (★ 4.9)"
+        activeDriverId = ""
 
         val newOrder = OrderModel(
             customerId = uid,
             customerName = FirebaseRepository.currentUser()?.displayName ?: "Mahasiswa UNNES",
-            driverId = activeDriverId,
-            driverName = activeDriverName,
-            plateNumber = activePlateNumber,
+            driverId = "",
+            driverName = "",
+            plateNumber = "",
             serviceType = activeServiceName,
             pickupName = activeJemput,
             pickupLat = pickupGeoPoint.latitude,
@@ -333,7 +291,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
             distanceKm = lastDistanceKm,
             fare = lastFare,
             paymentMethod = activePaymentMethod,
-            status = OrderModel.STATUS_WAITING
+            status = OrderModel.STATUS_SEARCHING
         )
 
         binding.btnPesan.isEnabled = false
@@ -345,13 +303,33 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
             result.onSuccess { created ->
                 activeOrderId = created.orderId
                 tripPhase = TripPhase.WAITING_CONFIRMATION
+                isTrackingActive = true
                 observeLiveOrderAndDriver()
                 observeOverlayChat(created.orderId)
-                showInitialConfirmationDialog()
+                showSearchingDriverDialog()
             }.onFailure { err ->
                 Toast.makeText(requireContext(), "Gagal membuat pesanan: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private fun showSearchingDriverDialog() {
+        if (!isAdded || isDetached || _binding == null) return
+        searchingDialog?.dismiss()
+        searchingDialog = AlertDialog.Builder(requireContext())
+            .setTitle("🔍 Mencari Driver $activeServiceName...")
+            .setMessage("Menunggu driver menerima pesanan Anda secara live...\n\n📍 Jemput: $activeJemput\n🏁 Tujuan: $activeTujuan\n💳 Pembayaran: $activePaymentMethod")
+            .setCancelable(false)
+            .setNegativeButton("❌ Batalkan Pesanan") { dialog, _ ->
+                FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_CANCELLED)
+                resetTripState()
+                dialog.dismiss()
+                if (isAdded) {
+                    Toast.makeText(requireContext(), "Pesanan dibatalkan.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .create()
+        searchingDialog?.show()
     }
 
     private fun observeLiveOrderAndDriver() {
@@ -359,13 +337,64 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         orderListener?.remove()
         orderListener = FirebaseRepository.observeOrder(activeOrderId) { order ->
             if (!isAdded || _binding == null || order == null) return@observeOrder
-            if (order.status == OrderModel.STATUS_CANCELLED && tripPhase != TripPhase.IDLE) {
-                resetTripState()
+
+            when (order.status) {
+                OrderModel.STATUS_DRIVER_TO_PICKUP -> {
+                    searchingDialog?.dismiss()
+                    searchingDialog = null
+
+                    if (order.driverId.isNotBlank() && activeDriverId != order.driverId) {
+                        activeDriverId = order.driverId
+                        activeDriverName = order.driverName.ifBlank { "Driver Anjem" }
+                        activePlateNumber = order.plateNumber.ifBlank { "H 2341 XY" }
+                        binding.tvOverlayDriverName.text = "$activeDriverName (★ 4.9)"
+                        attachDriverLocationListener(order.driverId)
+                    }
+
+                    if (tripPhase == TripPhase.WAITING_CONFIRMATION) {
+                        tripPhase = TripPhase.DRIVER_TO_PICKUP
+                        binding.tvMapH3Info.text = "🛵 $activeDriverName menuju titik jemput (Tap utk Chat)"
+                        showDriverAcceptedDialog()
+                    }
+                }
+
+                OrderModel.STATUS_ON_TRIP -> {
+                    searchingDialog?.dismiss()
+                    searchingDialog = null
+                    if (order.driverId.isNotBlank() && activeDriverId != order.driverId) {
+                        activeDriverId = order.driverId
+                        activeDriverName = order.driverName.ifBlank { "Driver Anjem" }
+                        activePlateNumber = order.plateNumber.ifBlank { "H 2341 XY" }
+                        attachDriverLocationListener(order.driverId)
+                    }
+                    tripPhase = TripPhase.TRIP_TO_DESTINATION
+                    binding.tvMapH3Info.text = "🛵 Dalam perjalanan bersama $activeDriverName (Tap utk Chat)"
+                }
+
+                OrderModel.STATUS_COMPLETED -> {
+                    searchingDialog?.dismiss()
+                    searchingDialog = null
+                    if (tripPhase != TripPhase.TRIP_COMPLETED && tripPhase != TripPhase.IDLE) {
+                        onTripCompleted()
+                    }
+                }
+
+                OrderModel.STATUS_CANCELLED -> {
+                    searchingDialog?.dismiss()
+                    searchingDialog = null
+                    if (tripPhase != TripPhase.IDLE) {
+                        resetTripState()
+                        Toast.makeText(requireContext(), "Pesanan dibatalkan.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
+    }
 
+    private fun attachDriverLocationListener(driverId: String) {
+        if (driverId.isBlank()) return
         driverLocListener?.remove()
-        driverLocListener = FirebaseRepository.observeDriverLocation(activeDriverId) { loc ->
+        driverLocListener = FirebaseRepository.observeDriverLocation(driverId) { loc ->
             if (!isAdded || _binding == null || loc == null || !isTrackingActive) return@observeDriverLocation
             if (loc.lat == 0.0 && loc.lng == 0.0) return@observeDriverLocation
 
@@ -373,6 +402,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
             if (markerDriver == null) {
                 markerDriver = Marker(binding.osmMapView).apply {
                     title = "🛵 Driver: ${loc.driverName} (${loc.plateNumber})"
+                    snippet = "Lokasi Live Driver"
                 }
             }
             if (!binding.osmMapView.overlays.contains(markerDriver)) {
@@ -384,175 +414,39 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         }
     }
 
-    private fun showInitialConfirmationDialog() {
-        if (!isAdded || isDetached || _binding == null || binding.chatOverlayContainer.isVisible) return
-
+    private fun showDriverAcceptedDialog() {
+        if (!isAdded || isDetached || _binding == null) return
         val message = """
             Driver $activeServiceName Ditemukan!
             
             👤 Driver: $activeDriverName (★ 4.9)
-            🏍️ Kendaraan: Honda Beat ($activePlateNumber)
+            🏍️ Kendaraan: $activePlateNumber
             
             📍 Jemput: $activeJemput
             🏁 Tujuan: $activeTujuan
             💳 Pembayaran: $activePaymentMethod
             ${if (activeCatatan.isNotBlank()) "📝 Catatan: $activeCatatan" else ""}
             
-            Silakan mulai perjalanan atau hubungi driver.
+            Driver sedang menuju titik jemput Anda. Pantau lokasi live driver di peta!
         """.trimIndent()
 
-        try {
-            android.app.AlertDialog.Builder(requireContext())
-                .setTitle("Konfirmasi Pesanan $activeServiceName")
-                .setMessage(message)
-                .setCancelable(false)
-                .setPositiveButton("🚀 Mulai Perjalanan") { dialog, _ ->
-                    dialog.dismiss()
-                    if (isAdded && _binding != null) {
-                        tripPhase = TripPhase.DRIVER_TO_PICKUP
-                        FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_DRIVER_TO_PICKUP)
-                        startRandomDriverToPickupAnimation()
-                    }
+        AlertDialog.Builder(requireContext())
+            .setTitle("Driver Ditemukan!")
+            .setMessage(message)
+            .setPositiveButton("📍 Pantau di Peta") { d, _ -> d.dismiss() }
+            .setNeutralButton("💬 Chat Driver") { d, _ ->
+                d.dismiss()
+                if (isAdded && _binding != null) {
+                    binding.chatOverlayContainer.visibility = View.VISIBLE
                 }
-                .setNeutralButton("💬 Chat Driver") { dialog, _ ->
-                    dialog.dismiss()
-                    if (isAdded && _binding != null) {
-                        binding.chatOverlayContainer.visibility = View.VISIBLE
-                    }
-                }
-                .setNegativeButton("❌ Batalkan Pesanan") { dialog, _ ->
-                    FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_CANCELLED)
-                    resetTripState()
-                    dialog.dismiss()
-                    if (isAdded) {
-                        Toast.makeText(requireContext(), "Pesanan dibatalkan.", Toast.LENGTH_SHORT).show()
-                    }
-                }
-                .show()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun startRandomDriverToPickupAnimation() {
-        if (!isAdded || _binding == null) return
-        val randomLatOffset = (Math.random() - 0.5) * 0.009
-        val randomLngOffset = (Math.random() - 0.5) * 0.009
-        val driverStartPoint = GeoPoint(pickupGeoPoint.latitude + randomLatOffset, pickupGeoPoint.longitude + randomLngOffset)
-
-        val pickupWaypoints = mutableListOf<GeoPoint>()
-        val steps = 8
-        for (i in 0..steps) {
-            val fraction = i.toDouble() / steps
-            val lat = driverStartPoint.latitude + (pickupGeoPoint.latitude - driverStartPoint.latitude) * fraction
-            val lng = driverStartPoint.longitude + (pickupGeoPoint.longitude - driverStartPoint.longitude) * fraction
-            pickupWaypoints.add(GeoPoint(lat, lng))
-        }
-
-        isTrackingActive = true
-        var stepIndex = 0
-
-        if (markerDriver == null) {
-            markerDriver = Marker(binding.osmMapView).apply {
-                title = "🛵 Driver: $activeDriverName ($activePlateNumber)"
-                snippet = "Menuju titik jemput Anda (maks 0.5 km)"
             }
-        }
-
-        if (!binding.osmMapView.overlays.contains(markerDriver)) {
-            binding.osmMapView.overlays.add(markerDriver)
-        }
-
-        Toast.makeText(requireContext(), "🛵 Driver $activeDriverName meluncur ke titik jemput Anda...", Toast.LENGTH_LONG).show()
-
-        trackingRunnable = object : Runnable {
-            override fun run() {
-                if (!isTrackingActive || !isAdded || _binding == null) {
-                    return
-                }
-                if (stepIndex >= pickupWaypoints.size) {
-                    startTripToDestinationAnimation()
-                    return
-                }
-
-                val currentPos = pickupWaypoints[stepIndex]
-                publishDriverPositionToFirebase(currentPos, OrderModel.STATUS_DRIVER_TO_PICKUP)
-                binding.tvMapH3Info.text = "🛵 Driver $activeDriverName menuju titik jemput..."
-
-                stepIndex++
-                trackingHandler.postDelayed(this, 180)
-            }
-        }
-
-        trackingHandler.post(trackingRunnable!!)
-    }
-
-    private fun startTripToDestinationAnimation() {
-        if (!isTrackingActive || !isAdded || _binding == null) return
-        tripPhase = TripPhase.TRIP_TO_DESTINATION
-        FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_ON_TRIP)
-        if (currentWaypoints.isEmpty()) {
-            currentWaypoints = listOf(pickupGeoPoint, destinationGeoPoint)
-        }
-
-        isTrackingActive = true
-        var stepIndex = 0
-
-        if (markerDriver == null) {
-            markerDriver = Marker(binding.osmMapView).apply {
-                title = "🛵 Driver: $activeDriverName ($activePlateNumber)"
-                snippet = "Menuju tujuan"
-            }
-        }
-
-        if (!binding.osmMapView.overlays.contains(markerDriver)) {
-            binding.osmMapView.overlays.add(markerDriver)
-        }
-
-        trackingRunnable = object : Runnable {
-            override fun run() {
-                if (!isTrackingActive || !isAdded || _binding == null) {
-                    return
-                }
-                if (stepIndex >= currentWaypoints.size) {
-                    onTripCompleted()
-                    return
-                }
-
-                val currentPos = currentWaypoints[stepIndex]
-                publishDriverPositionToFirebase(currentPos, OrderModel.STATUS_ON_TRIP)
-
-                val percent = (stepIndex + 1) * 100 / currentWaypoints.size
-                binding.tvMapH3Info.text = "🛵 Perjalanan ke Tujuan • $percent%"
-
-                stepIndex++
-                trackingHandler.postDelayed(this, 150)
-            }
-        }
-
-        trackingHandler.post(trackingRunnable!!)
-    }
-
-    private fun publishDriverPositionToFirebase(pos: GeoPoint, phase: String) {
-        val location = DriverLocation(
-            driverId = activeDriverId,
-            driverName = activeDriverName,
-            plateNumber = activePlateNumber,
-            lat = pos.latitude,
-            lng = pos.longitude,
-            h3Index = H3GeoUtils.getH3Index(pos.latitude, pos.longitude),
-            phase = phase,
-            orderId = activeOrderId,
-            updatedAt = System.currentTimeMillis()
-        )
-        FirebaseRepository.updateDriverLocation(location)
+            .show()
     }
 
     private fun onTripCompleted() {
-        stopLiveDriverAnimation()
+        stopLiveDriverMarker()
         tripPhase = TripPhase.TRIP_COMPLETED
         postTripSecondsLeft = 30
-        FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_COMPLETED)
 
         val uid = FirebaseRepository.currentUid()
         if (uid != null && activeOrderId.isNotBlank() && fareDeductedForOrderId != activeOrderId && activePaymentMethod == "KampusPay") {
@@ -576,27 +470,32 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         }
         postTripHandler.post(postTripRunnable!!)
 
-        android.app.AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(requireContext())
             .setTitle("Perjalanan Selesai! 🎉")
             .setMessage("Anda telah tiba di tujuan ($activeTujuan).\n\nTombol Chat Driver pos-perjalanan (30 dtk) tersedia di menu Home.")
-            .setPositiveButton("Selesai & Beri Ulasan") { _, _ ->
+            .setPositiveButton("Selesai & Chat Driver") { _, _ ->
                 resetTripState()
                 if (isAdded) {
                     findNavController().navigate(R.id.action_order_to_chat)
                 }
+            }
+            .setNegativeButton("Tutup") { d, _ ->
+                resetTripState()
+                d.dismiss()
             }
             .show()
     }
 
     private fun resetTripState() {
         tripPhase = TripPhase.IDLE
-        stopLiveDriverAnimation()
+        searchingDialog?.dismiss()
+        searchingDialog = null
+        stopLiveDriverMarker()
         postTripRunnable?.let { postTripHandler.removeCallbacks(it) }
     }
 
-    private fun stopLiveDriverAnimation() {
+    private fun stopLiveDriverMarker() {
         isTrackingActive = false
-        trackingRunnable?.let { trackingHandler.removeCallbacks(it) }
         if (_binding != null) {
             markerDriver?.let { binding.osmMapView.overlays.remove(it) }
             binding.osmMapView.invalidate()
@@ -654,11 +553,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         val matchedKey = campusMap.keys.find { text.contains(it, ignoreCase = true) }
         if (matchedKey != null) {
             val point = campusMap[matchedKey]!!
-            if (isJemput) {
-                pickupGeoPoint = point
-            } else {
-                destinationGeoPoint = point
-            }
+            if (isJemput) pickupGeoPoint = point else destinationGeoPoint = point
             binding.osmMapView.controller.animateTo(point)
             updateMapOverlaysAndRoute()
             Toast.makeText(requireContext(), "📍 Peta diarahkan ke $matchedKey", Toast.LENGTH_SHORT).show()
@@ -677,11 +572,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
                     val point = GeoPoint(addr.latitude, addr.longitude)
                     mainHandler.post {
                         if (!isAdded || _binding == null) return@post
-                        if (isJemput) {
-                            pickupGeoPoint = point
-                        } else {
-                            destinationGeoPoint = point
-                        }
+                        if (isJemput) pickupGeoPoint = point else destinationGeoPoint = point
                         binding.osmMapView.controller.animateTo(point)
                         updateMapOverlaysAndRoute()
                         Toast.makeText(requireContext(), "📍 Peta diarahkan ke lokasi yang dicari", Toast.LENGTH_SHORT).show()
@@ -721,8 +612,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private val googleMapsStreetSource = object : OnlineTileSourceBase(
-        "GoogleMapsStreet",
-        0, 20, 256, ".png",
+        "GoogleMapsStreet", 0, 20, 256, ".png",
         arrayOf(
             "https://mt0.google.com/vt/lyrs=m&x=",
             "https://mt1.google.com/vt/lyrs=m&x=",
@@ -738,8 +628,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private val googleMapsSatelliteSource = object : OnlineTileSourceBase(
-        "GoogleMapsSatellite",
-        0, 20, 256, ".png",
+        "GoogleMapsSatellite", 0, 20, 256, ".png",
         arrayOf(
             "https://mt0.google.com/vt/lyrs=y&x=",
             "https://mt1.google.com/vt/lyrs=y&x=",
@@ -769,9 +658,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     private fun scheduleDebouncedMapUpdate() {
         if (isTrackingActive || tripPhase != TripPhase.IDLE || _binding == null) return
         pendingDebounceRunnable?.let { mainHandler.removeCallbacks(it) }
-        pendingDebounceRunnable = Runnable {
-            onMapMoved()
-        }
+        pendingDebounceRunnable = Runnable { onMapMoved() }
         mainHandler.postDelayed(pendingDebounceRunnable!!, 400)
     }
 
@@ -806,11 +693,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     private fun setTextProgrammatically(isJemput: Boolean, text: String) {
         if (_binding == null) return
         isProgrammaticTextUpdate = true
-        if (isJemput) {
-            binding.spJemput.setText(text)
-        } else {
-            binding.spTujuan.setText(text)
-        }
+        if (isJemput) binding.spJemput.setText(text) else binding.spTujuan.setText(text)
         isProgrammaticTextUpdate = false
     }
 
@@ -819,11 +702,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         val center = binding.osmMapView.mapCenter as GeoPoint
         val h3Index = H3GeoUtils.getH3Index(center.latitude, center.longitude)
 
-        if (targetSettingField == "jemput") {
-            pickupGeoPoint = center
-        } else {
-            destinationGeoPoint = center
-        }
+        if (targetSettingField == "jemput") pickupGeoPoint = center else destinationGeoPoint = center
 
         binding.tvMapH3Info.text = "⚡ H3 Index: $h3Index"
         updateMapOverlaysAndRoute()
@@ -862,26 +741,24 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         if (!isAdded || _binding == null) return
         binding.osmMapView.overlays.clear()
 
-        // 1. Add Pickup Marker (🟢 Green)
-        markerPickup = Marker(binding.osmMapView)
-        markerPickup?.position = pickupGeoPoint
-        markerPickup?.title = "🟢 Jemput: ${binding.spJemput.text}"
+        markerPickup = Marker(binding.osmMapView).apply {
+            position = pickupGeoPoint
+            title = "🟢 Jemput: ${binding.spJemput.text}"
+        }
         binding.osmMapView.overlays.add(markerPickup)
 
-        // 2. Add Destination Marker (🔴 Red)
-        markerDest = Marker(binding.osmMapView)
-        markerDest?.position = destinationGeoPoint
-        markerDest?.title = "🔴 Tujuan: ${binding.spTujuan.text}"
+        markerDest = Marker(binding.osmMapView).apply {
+            position = destinationGeoPoint
+            title = "🔴 Tujuan: ${binding.spTujuan.text}"
+        }
         binding.osmMapView.overlays.add(markerDest)
 
-        // Re-add Driver Marker if tracking is active
         markerDriver?.let {
             if (!binding.osmMapView.overlays.contains(it)) {
                 binding.osmMapView.overlays.add(it)
             }
         }
 
-        // 3. Fetch Real Turn-by-Turn Road Route (OSRM Engine)
         fetchOSRMDriverRoute(pickupGeoPoint, destinationGeoPoint)
     }
 
@@ -918,9 +795,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
                             for (i in 0 until coordinates.length()) {
                                 val coord = coordinates.getJSONArray(i)
-                                val lng = coord.getDouble(0)
-                                val lat = coord.getDouble(1)
-                                waypoints.add(GeoPoint(lat, lng))
+                                waypoints.add(GeoPoint(coord.getDouble(1), coord.getDouble(0)))
                             }
                             success = true
                             break
@@ -933,17 +808,13 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
             if (success && waypoints.isNotEmpty()) {
                 currentWaypoints = waypoints
-                mainHandler.post {
-                    drawRoadRoutePolyline(waypoints, distanceMeters)
-                }
+                mainHandler.post { drawRoadRoutePolyline(waypoints, distanceMeters) }
             } else {
                 val curvedWaypoints = generateRoadInterpolatedWaypoints(start, end)
                 currentWaypoints = curvedWaypoints
                 val results = FloatArray(1)
                 android.location.Location.distanceBetween(start.latitude, start.longitude, end.latitude, end.longitude, results)
-                mainHandler.post {
-                    drawRoadRoutePolyline(curvedWaypoints, results[0].toDouble() * 1.22)
-                }
+                mainHandler.post { drawRoadRoutePolyline(curvedWaypoints, results[0].toDouble() * 1.22) }
             }
         }.start()
     }
@@ -984,7 +855,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
         routeLine = Polyline().apply {
             setPoints(waypoints)
-            outlinePaint.color = "#0088CC".toColorInt()
+            outlinePaint.color = Color.parseColor("#0088CC")
             outlinePaint.strokeWidth = 12f
             outlinePaint.strokeCap = Paint.Cap.ROUND
         }
@@ -1009,6 +880,8 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     override fun onDestroyView() {
+        searchingDialog?.dismiss()
+        searchingDialog = null
         userListener?.remove()
         userListener = null
         orderListener?.remove()
@@ -1017,7 +890,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         driverLocListener = null
         overlayChatListener?.remove()
         overlayChatListener = null
-        stopLiveDriverAnimation()
+        stopLiveDriverMarker()
         postTripRunnable?.let { postTripHandler.removeCallbacks(it) }
         pendingDebounceRunnable?.let { mainHandler.removeCallbacks(it) }
         mainHandler.removeCallbacksAndMessages(null)
