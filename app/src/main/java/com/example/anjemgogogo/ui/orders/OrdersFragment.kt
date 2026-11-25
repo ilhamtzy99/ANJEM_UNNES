@@ -45,7 +45,7 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                 }
                 R.id.nav_orders -> true
                 R.id.nav_chat -> {
-                    findNavController().navigate(R.id.action_orders_to_chat)
+                    findNavController().navigate(R.id.action_orders_to_chat_list)
                     true
                 }
                 R.id.nav_profile -> {

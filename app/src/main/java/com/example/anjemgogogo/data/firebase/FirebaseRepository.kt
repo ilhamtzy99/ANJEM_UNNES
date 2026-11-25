@@ -529,4 +529,21 @@ object FirebaseRepository {
         query.addValueEventListener(listener)
         return ListenerHandle { query.removeEventListener(listener) }
     }
+
+    fun observeLastChatMessage(
+        orderId: String,
+        onUpdate: (ChatMessage?) -> Unit
+    ): ListenerHandle {
+        val query = chatsRef.child(orderId).child("messages").orderByChild("timestamp").limitToLast(1)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val last = snapshot.children.firstOrNull()?.getValue(ChatMessage::class.java)
+                onUpdate(last)
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        query.addValueEventListener(listener)
+        return ListenerHandle { query.removeEventListener(listener) }
+    }
 }

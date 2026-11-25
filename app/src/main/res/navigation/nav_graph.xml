@@ -36,6 +36,9 @@
             android:id="@+id/action_home_to_chat"
             app:destination="@id/chatFragment" />
         <action
+            android:id="@+id/action_home_to_chat_list"
+            app:destination="@id/chatListFragment" />
+        <action
             android:id="@+id/action_home_to_driver_home"
             app:destination="@id/driverHomeFragment" />
     </fragment>
@@ -52,6 +55,9 @@
             android:id="@+id/action_driver_home_to_chat"
             app:destination="@id/chatFragment" />
         <action
+            android:id="@+id/action_driver_home_to_chat_list"
+            app:destination="@id/chatListFragment" />
+        <action
             android:id="@+id/action_driver_home_to_profile"
             app:destination="@id/profileFragment" />
         <action
@@ -66,6 +72,28 @@
         tools:layout="@layout/fragment_order">
         <action
             android:id="@+id/action_order_to_chat"
+            app:destination="@id/chatFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/chatListFragment"
+        android:name="com.example.anjemgogogo.ui.chat.ChatListFragment"
+        android:label="Daftar Chat"
+        tools:layout="@layout/fragment_chat_list">
+        <action
+            android:id="@+id/action_chat_list_to_home"
+            app:destination="@id/homeFragment" />
+        <action
+            android:id="@+id/action_chat_list_to_driver_home"
+            app:destination="@id/driverHomeFragment" />
+        <action
+            android:id="@+id/action_chat_list_to_orders"
+            app:destination="@id/ordersFragment" />
+        <action
+            android:id="@+id/action_chat_list_to_profile"
+            app:destination="@id/profileFragment" />
+        <action
+            android:id="@+id/action_chat_list_to_chat"
             app:destination="@id/chatFragment" />
     </fragment>
 
@@ -99,6 +127,9 @@
         <action
             android:id="@+id/action_orders_to_chat"
             app:destination="@id/chatFragment" />
+        <action
+            android:id="@+id/action_orders_to_chat_list"
+            app:destination="@id/chatListFragment" />
     </fragment>
 
     <fragment
@@ -118,6 +149,9 @@
         <action
             android:id="@+id/action_profile_to_chat"
             app:destination="@id/chatFragment" />
+        <action
+            android:id="@+id/action_profile_to_chat_list"
+            app:destination="@id/chatListFragment" />
         <action
             android:id="@+id/action_profile_to_login"
             app:destination="@id/loginFragment" />

@@ -133,7 +133,7 @@ class ChatFragment : Fragment(R.layout.fragment_chat) {
         chatListener?.remove()
         chatListener = FirebaseRepository.observeChatMessages(orderId) { messages ->
             if (!isAdded || _binding == null) return@observeChatMessages
-            val initialChildCount = 2.coerceAtMost(binding.chatMessageContainer.childCount)
+            val initialChildCount = 1.coerceAtMost(binding.chatMessageContainer.childCount)
             ChatBubbleHelper.renderMessages(
                 requireContext(),
                 binding.chatMessageContainer,

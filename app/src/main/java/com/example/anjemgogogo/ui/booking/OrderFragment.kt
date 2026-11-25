@@ -218,13 +218,12 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         overlayChatListener?.remove()
         overlayChatListener = FirebaseRepository.observeChatMessages(orderId) { messages ->
             if (!isAdded || _binding == null) return@observeChatMessages
-            val initialChildCount = 1.coerceAtMost(binding.chatOverlayMessageContainer.childCount)
             ChatBubbleHelper.renderMessages(
                 requireContext(),
                 binding.chatOverlayMessageContainer,
                 binding.chatOverlayScrollView,
                 messages,
-                keepFirstChildCount = initialChildCount
+                keepFirstChildCount = 0
             )
         }
     }

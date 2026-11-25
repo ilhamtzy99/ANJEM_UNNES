@@ -40,7 +40,7 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                     true
                 }
                 R.id.nav_chat -> {
-                    findNavController().navigate(R.id.action_profile_to_chat)
+                    findNavController().navigate(R.id.action_profile_to_chat_list)
                     true
                 }
                 R.id.nav_profile -> true
