@@ -10,13 +10,10 @@ import android.location.Geocoder
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -44,10 +41,7 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
-import kotlin.math.cos
 import kotlin.math.sin
 
 class OrderFragment : Fragment(R.layout.fragment_order) {
@@ -73,13 +67,17 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         var postTripSecondsLeft = 30
     }
 
-    private lateinit var binding: FragmentOrderBinding
+    private var _binding: FragmentOrderBinding? = null
+    private val binding get() = _binding!!
+
     private var selectedServiceType = "Motor" // "Motor" or "Kurir"
     private var isSatelliteMode = false // Toggle between Street & Satellite
     private var lastDistanceKm: Double = 1.0
     private var lastFare: Long = 7500L
+    private var activePaymentMethod: String = "KampusPay"
     private var fareDeductedForOrderId: String = ""
 
+    private var userListener: FirebaseRepository.ListenerHandle? = null
     private var orderListener: FirebaseRepository.ListenerHandle? = null
     private var driverLocListener: FirebaseRepository.ListenerHandle? = null
     private var overlayChatListener: FirebaseRepository.ListenerHandle? = null
@@ -101,7 +99,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     private var isTrackingActive = false
     private val trackingHandler = Handler(Looper.getMainLooper())
     private var trackingRunnable: Runnable? = null
-    private var postTripHandler = Handler(Looper.getMainLooper())
+    private val postTripHandler = Handler(Looper.getMainLooper())
     private var postTripRunnable: Runnable? = null
 
     // Debounce Handler to prevent map scrolling lag
@@ -111,24 +109,25 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) {
+        if (isGranted && isAdded && _binding != null) {
             moveToCurrentGpsLocation()
         }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding = FragmentOrderBinding.bind(view)
+        _binding = FragmentOrderBinding.bind(view)
 
         // Initialize OSMDroid Configuration with valid package User-Agent to comply with tile policy
         val ctx = requireContext().applicationContext
-        Configuration.getInstance().userAgentValue = "Mozilla/5.0 (Android; Mobile) AnjemUNNES/1.0 (" + ctx.packageName + ")"
+        Configuration.getInstance().userAgentValue = "Mozilla/5.0 (Android; Mobile) AnjemUNNES/1.0 (${ctx.packageName})"
         Configuration.getInstance().load(ctx, ctx.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
 
         setupMapView()
         setupServiceToggle()
         setupEditorActionListeners()
         setupOverlayChatListeners()
+        observeUserBalance()
 
         // Activate GPS location for default pickup
         checkLocationPermissionAndMove()
@@ -159,6 +158,9 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         }
 
         binding.btnBatal.setOnClickListener {
+            if (activeOrderId.isNotBlank() && tripPhase != TripPhase.IDLE && tripPhase != TripPhase.TRIP_COMPLETED) {
+                FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_CANCELLED)
+            }
             resetTripState()
             findNavController().navigateUp()
         }
@@ -174,6 +176,16 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
             } else {
                 startOrderMatchingWorkflow()
             }
+        }
+    }
+
+    private fun observeUserBalance() {
+        val uid = FirebaseRepository.currentUid() ?: return
+        userListener?.remove()
+        userListener = FirebaseRepository.observeUserProfile(uid) { profile ->
+            if (!isAdded || _binding == null || profile == null) return@observeUserProfile
+            val formatted = String.format(Locale.US, "%,d", profile.balance).replace(',', '.')
+            binding.rbKampusPay.text = "KampusPay\nSisa: Rp $formatted"
         }
     }
 
@@ -206,13 +218,14 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         if (orderId.isBlank()) return
         overlayChatListener?.remove()
         overlayChatListener = FirebaseRepository.observeChatMessages(orderId) { messages ->
-            if (!isAdded) return@observeChatMessages
+            if (!isAdded || _binding == null) return@observeChatMessages
+            val initialChildCount = 1.coerceAtMost(binding.chatOverlayMessageContainer.childCount)
             ChatBubbleHelper.renderMessages(
                 requireContext(),
                 binding.chatOverlayMessageContainer,
                 binding.chatOverlayScrollView,
                 messages,
-                keepFirstChildCount = 0
+                keepFirstChildCount = initialChildCount
             )
         }
     }
@@ -232,7 +245,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
             timestamp = System.currentTimeMillis()
         )
         FirebaseRepository.sendChatMessage(activeOrderId, msg) { sent ->
-            if (sent && isAdded) {
+            if (sent && isAdded && _binding != null) {
                 simulateOverlayDriverReply(activeOrderId)
             }
         }
@@ -240,7 +253,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
     private fun simulateOverlayDriverReply(orderId: String) {
         mainHandler.postDelayed({
-            if (!isAdded || activeOrderId != orderId) return@postDelayed
+            if (!isAdded || _binding == null || activeOrderId != orderId) return@postDelayed
             val replies = listOf(
                 "Siap kak! Saya meluncur ke titik lokasi sekarang.",
                 "Baik kak, posisi saya sudah dekat sekitar 200 meter lagi.",
@@ -261,16 +274,23 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
     override fun onResume() {
         super.onResume()
-        if (isAdded && !isDetached) {
+        if (isAdded && !isDetached && _binding != null) {
             binding.osmMapView.onResume()
             if (tripPhase == TripPhase.WAITING_CONFIRMATION && binding.chatOverlayContainer.visibility != View.VISIBLE) {
                 view?.postDelayed({
-                    if (isAdded && !isDetached && tripPhase == TripPhase.WAITING_CONFIRMATION) {
+                    if (isAdded && !isDetached && _binding != null && tripPhase == TripPhase.WAITING_CONFIRMATION) {
                         showInitialConfirmationDialog()
                     }
                 }, 250)
             }
         }
+    }
+
+    override fun onPause() {
+        if (_binding != null) {
+            binding.osmMapView.onPause()
+        }
+        super.onPause()
     }
 
     private fun startOrderMatchingWorkflow() {
@@ -284,11 +304,12 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         activeTujuan = binding.spTujuan.text.toString().trim()
         activeCatatan = binding.etCatatan.text.toString().trim()
         activeServiceName = if (selectedServiceType == "Motor") "Anjem Motor" else "Kurir / Titip Beli"
+        activePaymentMethod = if (binding.rgPayment.checkedRadioButtonId == R.id.rbCash) "Tunai" else "KampusPay"
 
         val driverIds = listOf("driver_ahmad_fauzi", "driver_bayu_pratama", "driver_rizki_mahendra", "driver_eko_prasetyo")
         val driverNames = listOf("Ahmad Fauzi", "Bayu Pratama", "Rizki Mahendra", "Eko Prasetyo")
         val plates = listOf("H 2341 XY", "H 5432 AB", "H 1289 ZC", "H 9876 KL")
-        val randomIdx = (driverNames.indices).random()
+        val randomIdx = driverNames.indices.random()
         activeDriverId = driverIds[randomIdx]
         activeDriverName = driverNames[randomIdx]
         activePlateNumber = plates[randomIdx]
@@ -310,14 +331,16 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
             notes = activeCatatan,
             distanceKm = lastDistanceKm,
             fare = lastFare,
-            paymentMethod = "KampusPay",
+            paymentMethod = activePaymentMethod,
             status = OrderModel.STATUS_WAITING
         )
 
         binding.btnPesan.isEnabled = false
+        binding.btnPesan.text = "Menghubungkan..."
         FirebaseRepository.createOrder(newOrder) { result ->
-            if (!isAdded) return@createOrder
+            if (!isAdded || _binding == null) return@createOrder
             binding.btnPesan.isEnabled = true
+            binding.btnPesan.text = "➔ Pesan Sekarang"
             result.onSuccess { created ->
                 activeOrderId = created.orderId
                 tripPhase = TripPhase.WAITING_CONFIRMATION
@@ -334,19 +357,15 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         if (activeOrderId.isBlank()) return
         orderListener?.remove()
         orderListener = FirebaseRepository.observeOrder(activeOrderId) { order ->
-            if (!isAdded || order == null) return@observeOrder
-            when (order.status) {
-                OrderModel.STATUS_CANCELLED -> {
-                    if (tripPhase != TripPhase.IDLE) {
-                        resetTripState()
-                    }
-                }
+            if (!isAdded || _binding == null || order == null) return@observeOrder
+            if (order.status == OrderModel.STATUS_CANCELLED && tripPhase != TripPhase.IDLE) {
+                resetTripState()
             }
         }
 
         driverLocListener?.remove()
         driverLocListener = FirebaseRepository.observeDriverLocation(activeDriverId) { loc ->
-            if (!isAdded || loc == null || !isTrackingActive) return@observeDriverLocation
+            if (!isAdded || _binding == null || loc == null || !isTrackingActive) return@observeDriverLocation
             if (loc.lat == 0.0 && loc.lng == 0.0) return@observeDriverLocation
 
             val currentPos = GeoPoint(loc.lat, loc.lng)
@@ -365,7 +384,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private fun showInitialConfirmationDialog() {
-        if (!isAdded || isDetached || binding.chatOverlayContainer.visibility == View.VISIBLE) return
+        if (!isAdded || isDetached || _binding == null || binding.chatOverlayContainer.visibility == View.VISIBLE) return
 
         val message = """
             Driver $activeServiceName Ditemukan!
@@ -375,6 +394,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
             
             📍 Jemput: $activeJemput
             🏁 Tujuan: $activeTujuan
+            💳 Pembayaran: $activePaymentMethod
             ${if (activeCatatan.isNotBlank()) "📝 Catatan: $activeCatatan" else ""}
             
             Silakan mulai perjalanan atau hubungi driver.
@@ -387,19 +407,25 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
                 .setCancelable(false)
                 .setPositiveButton("🚀 Mulai Perjalanan") { dialog, _ ->
                     dialog.dismiss()
-                    tripPhase = TripPhase.DRIVER_TO_PICKUP
-                    FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_DRIVER_TO_PICKUP)
-                    startRandomDriverToPickupAnimation()
+                    if (isAdded && _binding != null) {
+                        tripPhase = TripPhase.DRIVER_TO_PICKUP
+                        FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_DRIVER_TO_PICKUP)
+                        startRandomDriverToPickupAnimation()
+                    }
                 }
                 .setNeutralButton("💬 Chat Driver") { dialog, _ ->
                     dialog.dismiss()
-                    binding.chatOverlayContainer.visibility = View.VISIBLE
+                    if (isAdded && _binding != null) {
+                        binding.chatOverlayContainer.visibility = View.VISIBLE
+                    }
                 }
                 .setNegativeButton("❌ Batalkan Pesanan") { dialog, _ ->
                     FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_CANCELLED)
                     resetTripState()
                     dialog.dismiss()
-                    Toast.makeText(requireContext(), "Pesanan dibatalkan.", Toast.LENGTH_SHORT).show()
+                    if (isAdded) {
+                        Toast.makeText(requireContext(), "Pesanan dibatalkan.", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 .show()
         } catch (e: Exception) {
@@ -408,6 +434,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private fun startRandomDriverToPickupAnimation() {
+        if (!isAdded || _binding == null) return
         val randomLatOffset = (Math.random() - 0.5) * 0.009
         val randomLngOffset = (Math.random() - 0.5) * 0.009
         val driverStartPoint = GeoPoint(pickupGeoPoint.latitude + randomLatOffset, pickupGeoPoint.longitude + randomLngOffset)
@@ -439,14 +466,16 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
         trackingRunnable = object : Runnable {
             override fun run() {
-                if (!isTrackingActive || !isAdded || stepIndex >= pickupWaypoints.size) {
+                if (!isTrackingActive || !isAdded || _binding == null) {
+                    return
+                }
+                if (stepIndex >= pickupWaypoints.size) {
                     startTripToDestinationAnimation()
                     return
                 }
 
                 val currentPos = pickupWaypoints[stepIndex]
                 publishDriverPositionToFirebase(currentPos, OrderModel.STATUS_DRIVER_TO_PICKUP)
-
                 binding.tvMapH3Info.text = "🛵 Driver $activeDriverName menuju titik jemput..."
 
                 stepIndex++
@@ -458,6 +487,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private fun startTripToDestinationAnimation() {
+        if (!isTrackingActive || !isAdded || _binding == null) return
         tripPhase = TripPhase.TRIP_TO_DESTINATION
         FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_ON_TRIP)
         if (currentWaypoints.isEmpty()) {
@@ -480,7 +510,10 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
         trackingRunnable = object : Runnable {
             override fun run() {
-                if (!isTrackingActive || !isAdded || stepIndex >= currentWaypoints.size) {
+                if (!isTrackingActive || !isAdded || _binding == null) {
+                    return
+                }
+                if (stepIndex >= currentWaypoints.size) {
                     onTripCompleted()
                     return
                 }
@@ -521,13 +554,15 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_COMPLETED)
 
         val uid = FirebaseRepository.currentUid()
-        if (uid != null && activeOrderId.isNotBlank() && fareDeductedForOrderId != activeOrderId) {
+        if (uid != null && activeOrderId.isNotBlank() && fareDeductedForOrderId != activeOrderId && activePaymentMethod == "KampusPay") {
             fareDeductedForOrderId = activeOrderId
             FirebaseRepository.adjustBalance(uid, -lastFare)
         }
 
+        if (!isAdded || _binding == null) return
         binding.tvMapH3Info.text = "🎉 Perjalanan Selesai! Terima kasih."
 
+        postTripRunnable?.let { postTripHandler.removeCallbacks(it) }
         postTripRunnable = object : Runnable {
             override fun run() {
                 if (postTripSecondsLeft > 0 && tripPhase == TripPhase.TRIP_COMPLETED) {
@@ -545,7 +580,9 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
             .setMessage("Anda telah tiba di tujuan ($activeTujuan).\n\nTombol Chat Driver pos-perjalanan (30 dtk) tersedia di menu Home.")
             .setPositiveButton("Selesai & Beri Ulasan") { _, _ ->
                 resetTripState()
-                findNavController().navigate(R.id.action_order_to_chat)
+                if (isAdded) {
+                    findNavController().navigate(R.id.action_order_to_chat)
+                }
             }
             .show()
     }
@@ -559,8 +596,10 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     private fun stopLiveDriverAnimation() {
         isTrackingActive = false
         trackingRunnable?.let { trackingHandler.removeCallbacks(it) }
-        markerDriver?.let { binding.osmMapView.overlays.remove(it) }
-        binding.osmMapView.invalidate()
+        if (_binding != null) {
+            markerDriver?.let { binding.osmMapView.overlays.remove(it) }
+            binding.osmMapView.invalidate()
+        }
     }
 
     private fun setupEditorActionListeners() {
@@ -625,25 +664,26 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
             return
         }
 
+        val appContext = context?.applicationContext ?: return
         Thread {
             try {
-                val geocoder = Geocoder(requireContext(), Locale.getDefault())
+                val geocoder = Geocoder(appContext, Locale.getDefault())
                 val query = if (text.contains("UNNES", true) || text.contains("Semarang", true)) text else "$text, UNNES, Semarang"
+                @Suppress("DEPRECATION")
                 val addresses = geocoder.getFromLocationName(query, 1)
                 if (!addresses.isNullOrEmpty()) {
                     val addr = addresses[0]
                     val point = GeoPoint(addr.latitude, addr.longitude)
-                    if (isAdded) {
-                        requireActivity().runOnUiThread {
-                            if (isJemput) {
-                                pickupGeoPoint = point
-                            } else {
-                                destinationGeoPoint = point
-                            }
-                            binding.osmMapView.controller.animateTo(point)
-                            updateMapOverlaysAndRoute()
-                            Toast.makeText(requireContext(), "📍 Peta diarahkan ke lokasi yang dicari", Toast.LENGTH_SHORT).show()
+                    mainHandler.post {
+                        if (!isAdded || _binding == null) return@post
+                        if (isJemput) {
+                            pickupGeoPoint = point
+                        } else {
+                            destinationGeoPoint = point
                         }
+                        binding.osmMapView.controller.animateTo(point)
+                        updateMapOverlaysAndRoute()
+                        Toast.makeText(requireContext(), "📍 Peta diarahkan ke lokasi yang dicari", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
@@ -726,7 +766,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private fun scheduleDebouncedMapUpdate() {
-        if (isTrackingActive || tripPhase != TripPhase.IDLE) return
+        if (isTrackingActive || tripPhase != TripPhase.IDLE || _binding == null) return
         pendingDebounceRunnable?.let { mainHandler.removeCallbacks(it) }
         pendingDebounceRunnable = Runnable {
             onMapMoved()
@@ -746,13 +786,14 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         try {
             val fusedLocationClient = LocationServices.getFusedLocationProviderClient(requireActivity())
             fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-                location?.let {
-                    val currentPoint = GeoPoint(it.latitude, it.longitude)
-                    binding.osmMapView.controller.animateTo(currentPoint)
-                    pickupGeoPoint = currentPoint
-                    val address = getAddressFromGeoPoint(pickupGeoPoint)
+                if (!isAdded || _binding == null || location == null) return@addOnSuccessListener
+                val currentPoint = GeoPoint(location.latitude, location.longitude)
+                binding.osmMapView.controller.animateTo(currentPoint)
+                pickupGeoPoint = currentPoint
+                updateMapOverlaysAndRoute()
+                resolveAddressAsync(pickupGeoPoint) { address ->
+                    if (!isAdded || _binding == null) return@resolveAddressAsync
                     setTextProgrammatically(isJemput = true, address)
-                    updateMapOverlaysAndRoute()
                     Toast.makeText(requireContext(), "📍 Titik jemput default diatur dari lokasi GPS Anda", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -762,6 +803,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private fun setTextProgrammatically(isJemput: Boolean, text: String) {
+        if (_binding == null) return
         isProgrammaticTextUpdate = true
         if (isJemput) {
             binding.spJemput.setText(text)
@@ -772,24 +814,51 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private fun onMapMoved() {
-        if (isTrackingActive || tripPhase != TripPhase.IDLE) return
+        if (isTrackingActive || tripPhase != TripPhase.IDLE || !isAdded || _binding == null) return
         val center = binding.osmMapView.mapCenter as GeoPoint
-        val address = getAddressFromGeoPoint(center)
         val h3Index = H3GeoUtils.getH3Index(center.latitude, center.longitude)
 
         if (targetSettingField == "jemput") {
             pickupGeoPoint = center
-            setTextProgrammatically(isJemput = true, address)
         } else {
             destinationGeoPoint = center
-            setTextProgrammatically(isJemput = false, address)
         }
 
         binding.tvMapH3Info.text = "⚡ H3 Index: $h3Index"
         updateMapOverlaysAndRoute()
+
+        resolveAddressAsync(center) { address ->
+            if (!isAdded || _binding == null) return@resolveAddressAsync
+            setTextProgrammatically(isJemput = (targetSettingField == "jemput"), address)
+        }
+    }
+
+    private fun resolveAddressAsync(point: GeoPoint, onResult: (String) -> Unit) {
+        val fallback = String.format(Locale.getDefault(), "Lat: %.4f, Lng: %.4f", point.latitude, point.longitude)
+        val appContext = context?.applicationContext
+        if (appContext == null) {
+            onResult(fallback)
+            return
+        }
+        Thread {
+            var resolved = fallback
+            try {
+                val geocoder = Geocoder(appContext, Locale.getDefault())
+                @Suppress("DEPRECATION")
+                val addresses = geocoder.getFromLocation(point.latitude, point.longitude, 1)
+                if (!addresses.isNullOrEmpty()) {
+                    val addr = addresses[0]
+                    resolved = addr.getAddressLine(0) ?: "${addr.featureName ?: "Lokasi"}, ${addr.subLocality ?: "UNNES"}"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            mainHandler.post { onResult(resolved) }
+        }.start()
     }
 
     private fun updateMapOverlaysAndRoute() {
+        if (!isAdded || _binding == null) return
         binding.osmMapView.overlays.clear()
 
         // 1. Add Pickup Marker (🟢 Green)
@@ -863,20 +932,16 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
             if (success && waypoints.isNotEmpty()) {
                 currentWaypoints = waypoints
-                if (isAdded) {
-                    requireActivity().runOnUiThread {
-                        drawRoadRoutePolyline(waypoints, distanceMeters)
-                    }
+                mainHandler.post {
+                    drawRoadRoutePolyline(waypoints, distanceMeters)
                 }
             } else {
                 val curvedWaypoints = generateRoadInterpolatedWaypoints(start, end)
                 currentWaypoints = curvedWaypoints
                 val results = FloatArray(1)
                 android.location.Location.distanceBetween(start.latitude, start.longitude, end.latitude, end.longitude, results)
-                if (isAdded) {
-                    requireActivity().runOnUiThread {
-                        drawRoadRoutePolyline(curvedWaypoints, results[0].toDouble() * 1.22)
-                    }
+                mainHandler.post {
+                    drawRoadRoutePolyline(curvedWaypoints, results[0].toDouble() * 1.22)
                 }
             }
         }.start()
@@ -910,22 +975,8 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         }
     }
 
-    private fun getAddressFromGeoPoint(point: GeoPoint): String {
-        try {
-            val geocoder = Geocoder(requireContext(), Locale.getDefault())
-            val addresses = geocoder.getFromLocation(point.latitude, point.longitude, 1)
-            if (!addresses.isNullOrEmpty()) {
-                val addr = addresses[0]
-                return addr.getAddressLine(0) ?: "${addr.featureName ?: "Lokasi"}, ${addr.subLocality ?: "UNNES"}"
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return String.format(Locale.getDefault(), "Lat: %.4f, Lng: %.4f", point.latitude, point.longitude)
-    }
-
     private fun drawRoadRoutePolyline(waypoints: List<GeoPoint>, distanceMeters: Double) {
-        if (!isAdded) return
+        if (!isAdded || _binding == null) return
         if (routeLine != null) {
             binding.osmMapView.overlays.remove(routeLine)
         }
@@ -957,6 +1008,8 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     override fun onDestroyView() {
+        userListener?.remove()
+        userListener = null
         orderListener?.remove()
         orderListener = null
         driverLocListener?.remove()
@@ -966,6 +1019,8 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         stopLiveDriverAnimation()
         postTripRunnable?.let { postTripHandler.removeCallbacks(it) }
         pendingDebounceRunnable?.let { mainHandler.removeCallbacks(it) }
+        mainHandler.removeCallbacksAndMessages(null)
+        _binding = null
         super.onDestroyView()
     }
 

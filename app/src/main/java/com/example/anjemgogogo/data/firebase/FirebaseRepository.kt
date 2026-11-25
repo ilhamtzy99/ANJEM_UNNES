@@ -239,6 +239,10 @@ object FirebaseRepository {
         order: OrderModel,
         onResult: (Result<OrderModel>) -> Unit
     ) {
+        if (isUsingDummyConfig()) {
+            onResult(Result.failure(IllegalStateException("File app/google-services.json masih dummy. Ganti dengan google-services.json asli dari Firebase Console.")))
+            return
+        }
         val key = ordersRef.push().key
         if (key == null) {
             onResult(Result.failure(IllegalStateException("Gagal membuat ID pesanan.")))
@@ -250,9 +254,31 @@ object FirebaseRepository {
             createdAt = if (order.createdAt == 0L) now else order.createdAt,
             updatedAt = now
         )
+        var completed = false
+        val timeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        val timeoutRunnable = Runnable {
+            if (!completed) {
+                completed = true
+                onResult(Result.failure(IllegalStateException("Koneksi ke Firebase Realtime Database timeout. Periksa internet & Rules Firebase Anda.")))
+            }
+        }
+        timeoutHandler.postDelayed(timeoutRunnable, 6000L)
+
         ordersRef.child(key).setValue(finalOrder)
-            .addOnSuccessListener { onResult(Result.success(finalOrder)) }
-            .addOnFailureListener { e -> onResult(Result.failure(e)) }
+            .addOnSuccessListener {
+                if (!completed) {
+                    completed = true
+                    timeoutHandler.removeCallbacks(timeoutRunnable)
+                    onResult(Result.success(finalOrder))
+                }
+            }
+            .addOnFailureListener { e ->
+                if (!completed) {
+                    completed = true
+                    timeoutHandler.removeCallbacks(timeoutRunnable)
+                    onResult(Result.failure(e))
+                }
+            }
     }
 
     fun updateOrderStatus(orderId: String, status: String) {
