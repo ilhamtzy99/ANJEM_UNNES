@@ -10,6 +10,7 @@ import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.example.anjemgogogo.R
 import com.example.anjemgogogo.data.firebase.FirebaseRepository
+import com.example.anjemgogogo.data.model.AppNotification
 import com.example.anjemgogogo.databinding.FragmentHomeBinding
 import com.example.anjemgogogo.ui.booking.OrderFragment
 
@@ -76,7 +77,7 @@ class HomeFragment : Fragment() {
         binding.btnRektorat.setOnClickListener(popularClickListener)
 
         binding.btnNotification.setOnClickListener {
-            Toast.makeText(requireContext(), "🔔 Tidak ada notifikasi baru", Toast.LENGTH_SHORT).show()
+            findNavController().navigate(R.id.action_home_to_notifications)
         }
 
         // Listener untuk Top Up
@@ -140,6 +141,14 @@ class HomeFragment : Fragment() {
                         res.onSuccess { newBal ->
                             currentBalance = newBal
                             updateBalanceDisplay()
+                            FirebaseRepository.pushNotification(
+                                uid,
+                                AppNotification(
+                                    title = "Top Up KampusPay Berhasil",
+                                    message = "Saldo berhasil ditambah ${options[which]}. Saldo saat ini: Rp ${String.format(java.util.Locale.US, "%,d", newBal).replace(',', '.')}.",
+                                    tag = "KampusPay"
+                                )
+                            )
                             Toast.makeText(requireContext(), "Berhasil Top Up ${options[which]}!", Toast.LENGTH_SHORT).show()
                         }.onFailure { err ->
                             Toast.makeText(requireContext(), "Gagal Top Up: ${err.localizedMessage}", Toast.LENGTH_SHORT).show()

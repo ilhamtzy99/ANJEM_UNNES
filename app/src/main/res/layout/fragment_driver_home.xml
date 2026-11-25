@@ -122,8 +122,12 @@
                     android:padding="18dp">
 
                     <LinearLayout
+                        android:id="@+id/layoutStatusKerja"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
 
@@ -153,7 +157,7 @@
                                 android:textStyle="bold" />
                         </LinearLayout>
 
-                        <com.google.android.material.switchmaterial.SwitchMaterial
+                        <com.google.android.material.materialswitch.MaterialSwitch
                             android:id="@+id/switchDriverOnline"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"

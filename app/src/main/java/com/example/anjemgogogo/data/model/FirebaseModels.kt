@@ -1,6 +1,7 @@
 package com.example.anjemgogogo.data.model
 
 import com.google.firebase.database.IgnoreExtraProperties
+import com.google.firebase.database.PropertyName
 
 @IgnoreExtraProperties
 data class UserProfile(
@@ -14,6 +15,8 @@ data class UserProfile(
     var role: String = ROLE_PASSENGER, // "customer" | "driver"
     var vehicleModel: String = "Honda Beat",
     var vehiclePlate: String = "H 2341 XY",
+    @get:PropertyName("isOnline")
+    @set:PropertyName("isOnline")
     var isOnline: Boolean = false,
     var createdAt: Long = 0L
 ) {
@@ -77,5 +80,15 @@ data class ChatMessage(
     var senderName: String = "",
     var senderRole: String = "customer", // "customer" | "driver" | "system"
     var text: String = "",
+    var timestamp: Long = 0L
+)
+
+@IgnoreExtraProperties
+data class AppNotification(
+    var notifId: String = "",
+    var title: String = "",
+    var message: String = "",
+    var tag: String = "Info",
+    var orderId: String = "",
     var timestamp: Long = 0L
 )

@@ -3,6 +3,7 @@ package com.example.anjemgogogo.data.firebase
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import com.example.anjemgogogo.data.model.AppNotification
 import com.example.anjemgogogo.data.model.ChatMessage
 import com.example.anjemgogogo.data.model.DriverLocation
 import com.example.anjemgogogo.data.model.OrderModel
@@ -38,6 +39,7 @@ object FirebaseRepository {
     private val ordersRef: DatabaseReference get() = database.getReference("orders")
     private val driverLocationsRef: DatabaseReference get() = database.getReference("driver_locations")
     private val chatsRef: DatabaseReference get() = database.getReference("chats")
+    private val notificationsRef: DatabaseReference get() = database.getReference("notifications")
 
     var cachedRole: String = UserProfile.ROLE_PASSENGER
 
@@ -539,6 +541,37 @@ object FirebaseRepository {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val last = snapshot.children.firstOrNull()?.getValue(ChatMessage::class.java)
                 onUpdate(last)
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        query.addValueEventListener(listener)
+        return ListenerHandle { query.removeEventListener(listener) }
+    }
+
+    // ==================== NOTIFICATIONS ====================
+
+    fun pushNotification(uid: String, notification: AppNotification) {
+        if (uid.isBlank() || isUsingDummyConfig()) return
+        val ref = notificationsRef.child(uid)
+        val key = ref.push().key ?: return
+        val finalNotif = notification.copy(
+            notifId = key,
+            timestamp = if (notification.timestamp == 0L) System.currentTimeMillis() else notification.timestamp
+        )
+        ref.child(key).setValue(finalNotif)
+    }
+
+    fun observeUserNotifications(
+        uid: String,
+        onUpdate: (List<AppNotification>) -> Unit
+    ): ListenerHandle {
+        val query = notificationsRef.child(uid).orderByChild("timestamp").limitToLast(50)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = snapshot.children.mapNotNull { it.getValue(AppNotification::class.java) }
+                    .sortedByDescending { it.timestamp }
+                onUpdate(list)
             }
 
             override fun onCancelled(error: DatabaseError) {}

@@ -37,6 +37,8 @@ class DriverHomeFragment : Fragment(R.layout.fragment_driver_home) {
     private var driverProfile: UserProfile? = null
     private var activeOrder: OrderModel? = null
     private var isDriverOnline = true
+    private var isSyncingSwitch = false
+    private var hasInitializedOnlineState = false
 
     private var userListener: FirebaseRepository.ListenerHandle? = null
     private var availableOrdersListener: FirebaseRepository.ListenerHandle? = null
@@ -79,27 +81,18 @@ class DriverHomeFragment : Fragment(R.layout.fragment_driver_home) {
             }
         }
 
+        binding.layoutStatusKerja.setOnClickListener {
+            binding.switchDriverOnline.toggle()
+        }
+
         binding.switchDriverOnline.setOnCheckedChangeListener { _, isChecked ->
-            isDriverOnline = isChecked
-            binding.tvDriverOnlineLabel.text = if (isChecked) {
-                "Online • Siap Terima Order"
-            } else {
-                "Offline • Tidak Menerima Order"
-            }
-            FirebaseRepository.currentUid()?.let { uid ->
-                FirebaseRepository.updateUserFields(uid, mapOf("isOnline" to isChecked))
-            }
-            if (isChecked) {
-                startLiveGpsBroadcast()
-                observeIncomingOrders()
-            } else {
-                stopLiveGpsBroadcast()
-                availableOrdersListener?.remove()
-                availableOrdersListener = null
-                binding.llIncomingOrders.removeAllViews()
-                binding.tvEmptyIncomingOrders.visibility = View.VISIBLE
-                binding.tvEmptyIncomingOrders.text = "Anda sedang Offline.\nAktifkan status Online untuk menerima orderan."
-            }
+            if (isSyncingSwitch) return@setOnCheckedChangeListener
+            applyDriverOnlineState(isChecked, persistToFirebase = true)
+            Toast.makeText(
+                requireContext(),
+                if (isChecked) "Status Kerja: Online" else "Status Kerja: Offline",
+                Toast.LENGTH_SHORT
+            ).show()
         }
 
         setupActiveOrderActions()
@@ -117,8 +110,12 @@ class DriverHomeFragment : Fragment(R.layout.fragment_driver_home) {
             binding.tvDriverGreeting.text = "Halo, $firstName!"
             binding.tvDriverVehicle.text = "${profile.vehicleModel} • ${profile.vehiclePlate}"
             isDriverOnline = profile.isOnline
-            if (binding.switchDriverOnline.isChecked != profile.isOnline) {
+            if (!hasInitializedOnlineState || binding.switchDriverOnline.isChecked != profile.isOnline) {
+                hasInitializedOnlineState = true
+                isSyncingSwitch = true
                 binding.switchDriverOnline.isChecked = profile.isOnline
+                isSyncingSwitch = false
+                applyDriverOnlineState(profile.isOnline, persistToFirebase = false)
             }
         }
 
@@ -137,6 +134,35 @@ class DriverHomeFragment : Fragment(R.layout.fragment_driver_home) {
         }
 
         observeIncomingOrders()
+    }
+
+    private fun applyDriverOnlineState(isOnline: Boolean, persistToFirebase: Boolean) {
+        isDriverOnline = isOnline
+        binding.tvDriverOnlineLabel.text = if (isOnline) {
+            "Online • Siap Terima Order"
+        } else {
+            "Offline • Tidak Menerima Order"
+        }
+        if (persistToFirebase) {
+            FirebaseRepository.currentUid()?.let { uid ->
+                FirebaseRepository.updateUserFields(uid, mapOf("isOnline" to isOnline)) { ok, err ->
+                    if (!ok && isAdded) {
+                        Toast.makeText(requireContext(), "Gagal mengubah status: $err", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        if (isOnline) {
+            startLiveGpsBroadcast()
+            observeIncomingOrders()
+        } else {
+            stopLiveGpsBroadcast()
+            availableOrdersListener?.remove()
+            availableOrdersListener = null
+            binding.llIncomingOrders.removeAllViews()
+            binding.tvEmptyIncomingOrders.visibility = View.VISIBLE
+            binding.tvEmptyIncomingOrders.text = "Anda sedang Offline.\nAktifkan status Online untuk menerima orderan."
+        }
     }
 
     private fun observeIncomingOrders() {

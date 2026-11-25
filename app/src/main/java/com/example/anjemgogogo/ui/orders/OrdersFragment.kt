@@ -30,6 +30,13 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
 
         val isDriver = FirebaseRepository.isDriver()
         binding.tvSummarySpentLabel.text = if (isDriver) "Total pendapatan" else "Total pengeluaran"
+        binding.btnOrdersNotification.setOnClickListener {
+            if (!FirebaseRepository.isDriver()) {
+                findNavController().navigate(R.id.action_orders_to_notifications)
+            } else {
+                Toast.makeText(requireContext(), "Notifikasi khusus mode penumpang", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         binding.bottomNavigation.selectedItemId = R.id.nav_orders
         binding.bottomNavigation.setOnItemSelectedListener { item ->
