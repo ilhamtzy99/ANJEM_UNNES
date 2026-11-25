@@ -138,9 +138,10 @@
                         android:orientation="vertical">
 
                         <TextView
+                            android:id="@+id/tvTotalTrips"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="2"
+                            android:text="0"
                             android:textColor="@color/palette_dark"
                             android:textSize="24sp"
                             android:textStyle="bold" />
@@ -166,9 +167,10 @@
                         android:orientation="vertical">
 
                         <TextView
+                            android:id="@+id/tvTotalSpent"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Rp 14.000"
+                            android:text="Rp 0"
                             android:textColor="@color/palette_dark"
                             android:textSize="24sp"
                             android:textStyle="bold" />
@@ -196,274 +198,27 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    android:text="Perjalanan Terakhir"
+                    android:text="Daftar Pesanan &amp; Riwayat"
                     android:textColor="@color/text_primary"
                     android:textSize="17sp"
                     android:textStyle="bold" />
 
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="14dp"
-                app:cardBackgroundColor="@color/white"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="0dp"
-                app:strokeColor="@color/card_border"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
+                <TextView
+                    android:id="@+id/tvEmptyOrders"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="23 Sep 2026 • 08:30 WIB"
-                            android:textColor="@color/text_subtle"
-                            android:textSize="12sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:background="@drawable/bg_status_done"
-                            android:paddingStart="12dp"
-                            android:paddingEnd="12dp"
-                            android:paddingTop="4dp"
-                            android:paddingBottom="4dp"
-                            android:text="Selesai"
-                            android:textColor="@color/palette_dark"
-                            android:textSize="11sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-
-                    <!-- Rute: titik jemput -> tujuan -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:orientation="horizontal">
-
-                        <LinearLayout
-                            android:layout_width="12dp"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_horizontal"
-                            android:orientation="vertical">
-
-                            <View
-                                android:layout_width="12dp"
-                                android:layout_height="12dp"
-                                android:layout_marginTop="3dp"
-                                android:background="@drawable/bg_dot_primary" />
-
-                            <View
-                                android:layout_width="2dp"
-                                android:layout_height="20dp"
-                                android:background="@drawable/bg_route_line" />
-
-                            <View
-                                android:layout_width="12dp"
-                                android:layout_height="12dp"
-                                android:background="@drawable/bg_dot_dest" />
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Banaran (Gang Kamboja)"
-                                android:textColor="@color/text_primary"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="14dp"
-                                android:text="Fakultas Teknik (FT)"
-                                android:textColor="@color/text_primary"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginTop="14dp"
-                        android:layout_marginBottom="14dp"
-                        android:background="@color/divider_line" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="Anjem Motor • KampusPay"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Rp 6.000"
-                            android:textColor="@color/palette_dark"
-                            android:textSize="16sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="14dp"
-                app:cardBackgroundColor="@color/white"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="0dp"
-                app:strokeColor="@color/card_border"
-                app:strokeWidth="1dp">
+                    android:background="@drawable/bg_border_card"
+                    android:gravity="center"
+                    android:padding="24dp"
+                    android:text="Belum ada pesanan.\nMulai pesan Anjem atau Kurir dari menu Home!"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
 
                 <LinearLayout
+                    android:id="@+id/llOrdersContainer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="21 Sep 2026 • 16:15 WIB"
-                            android:textColor="@color/text_subtle"
-                            android:textSize="12sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:background="@drawable/bg_status_done"
-                            android:paddingStart="12dp"
-                            android:paddingEnd="12dp"
-                            android:paddingTop="4dp"
-                            android:paddingBottom="4dp"
-                            android:text="Selesai"
-                            android:textColor="@color/palette_dark"
-                            android:textSize="11sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-
-                    <!-- Rute: titik jemput -> tujuan -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:orientation="horizontal">
-
-                        <LinearLayout
-                            android:layout_width="12dp"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_horizontal"
-                            android:orientation="vertical">
-
-                            <View
-                                android:layout_width="12dp"
-                                android:layout_height="12dp"
-                                android:layout_marginTop="3dp"
-                                android:background="@drawable/bg_dot_primary" />
-
-                            <View
-                                android:layout_width="2dp"
-                                android:layout_height="20dp"
-                                android:background="@drawable/bg_route_line" />
-
-                            <View
-                                android:layout_width="12dp"
-                                android:layout_height="12dp"
-                                android:background="@drawable/bg_dot_dest" />
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Rektorat UNNES"
-                                android:textColor="@color/text_primary"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="14dp"
-                                android:text="Sekaran Permai"
-                                android:textColor="@color/text_primary"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginTop="14dp"
-                        android:layout_marginBottom="14dp"
-                        android:background="@color/divider_line" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="Kurir Titip Makanan • Tunai"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Rp 8.000"
-                            android:textColor="@color/palette_dark"
-                            android:textSize="16sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                    android:orientation="vertical" />
 
             </LinearLayout>
         </LinearLayout>

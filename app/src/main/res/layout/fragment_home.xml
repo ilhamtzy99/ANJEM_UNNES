@@ -97,6 +97,7 @@
                 </LinearLayout>
 
                 <TextView
+                    android:id="@+id/tvHomeGreeting"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
@@ -218,11 +219,12 @@
                             app:tint="@color/palette_normal" />
 
                         <TextView
+                            android:id="@+id/tvHomeStudentInfo"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="10dp"
                             android:layout_weight="1"
-                            android:text="32141020 • Mahasiswa FTI"
+                            android:text="Mahasiswa UNNES"
                             android:textColor="@color/text_secondary"
                             android:textSize="12sp"
                             android:textStyle="bold" />

@@ -1,35 +1,35 @@
 package com.example.anjemgogogo.ui.chat
 
 import android.content.Intent
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.Gravity
 import android.view.View
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.example.anjemgogogo.R
+import com.example.anjemgogogo.data.firebase.FirebaseRepository
+import com.example.anjemgogogo.data.model.ChatMessage
 import com.example.anjemgogogo.databinding.FragmentChatBinding
 import com.example.anjemgogogo.ui.booking.OrderFragment
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class ChatFragment : Fragment(R.layout.fragment_chat) {
 
-    private lateinit var binding: FragmentChatBinding
+    private var _binding: FragmentChatBinding? = null
+    private val binding get() = _binding!!
     private val timerHandler = Handler(Looper.getMainLooper())
     private var timerRunnable: Runnable? = null
+    private var chatListener: FirebaseRepository.ListenerHandle? = null
+    private var activeChatOrderId: String = ""
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding = FragmentChatBinding.bind(view)
+        _binding = FragmentChatBinding.bind(view)
+
+        binding.tvDriverName.text = "${OrderFragment.activeDriverName} (Anjem)"
+        binding.tvDriverStatus.text = "Honda Beat • ${OrderFragment.activePlateNumber} (★ 4.9)"
 
         binding.btnBackChat.setOnClickListener {
             if (!findNavController().navigateUp()) {
@@ -42,45 +42,120 @@ class ChatFragment : Fragment(R.layout.fragment_chat) {
                 val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:081234567890"))
                 startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(requireContext(), "Menghubungi Driver Ahmad Fauzi (0812-3456-7890)...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), "Menghubungi Driver ${OrderFragment.activeDriverName} (0812-3456-7890)...", Toast.LENGTH_SHORT).show()
             }
         }
 
         binding.btnSendChat.setOnClickListener {
             val text = binding.etChatMessage.text.toString().trim()
             if (text.isNotEmpty()) {
-                addUserMessageBubble(text)
+                sendLiveMessage(text)
                 binding.etChatMessage.setText("")
-                simulateDriverReply()
             }
         }
 
-        binding.chipReply1.setOnClickListener {
-            addUserMessageBubble(binding.chipReply1.text.toString())
-            simulateDriverReply()
-        }
+        binding.chipReply1.setOnClickListener { sendLiveMessage(binding.chipReply1.text.toString()) }
+        binding.chipReply2.setOnClickListener { sendLiveMessage(binding.chipReply2.text.toString()) }
+        binding.chipReply3.setOnClickListener { sendLiveMessage(binding.chipReply3.text.toString()) }
 
-        binding.chipReply2.setOnClickListener {
-            addUserMessageBubble(binding.chipReply2.text.toString())
-            simulateDriverReply()
-        }
-
-        binding.chipReply3.setOnClickListener {
-            addUserMessageBubble(binding.chipReply3.text.toString())
-            simulateDriverReply()
-        }
-
+        resolveAndObserveChat()
         startPostTripTimer()
+    }
+
+    private fun resolveAndObserveChat() {
+        val currentOrderId = OrderFragment.activeOrderId
+        if (currentOrderId.isNotBlank()) {
+            attachChatListener(currentOrderId)
+            return
+        }
+
+        val uid = FirebaseRepository.currentUid() ?: return
+        FirebaseRepository.fetchLatestOrderForUser(uid) { latestOrder ->
+            if (!isAdded || _binding == null) return@fetchLatestOrderForUser
+            if (latestOrder != null) {
+                OrderFragment.activeOrderId = latestOrder.orderId
+                if (latestOrder.driverName.isNotBlank()) {
+                    OrderFragment.activeDriverName = latestOrder.driverName
+                    binding.tvDriverName.text = "${latestOrder.driverName} (Anjem)"
+                }
+                if (latestOrder.plateNumber.isNotBlank()) {
+                    OrderFragment.activePlateNumber = latestOrder.plateNumber
+                    binding.tvDriverStatus.text = "Honda Beat • ${latestOrder.plateNumber} (★ 4.9)"
+                }
+                attachChatListener(latestOrder.orderId)
+            } else {
+                attachChatListener("support_$uid")
+            }
+        }
+    }
+
+    private fun attachChatListener(orderId: String) {
+        activeChatOrderId = orderId
+        chatListener?.remove()
+        chatListener = FirebaseRepository.observeChatMessages(orderId) { messages ->
+            if (!isAdded || _binding == null) return@observeChatMessages
+            // Pertahankan 2 child awal dari XML (pill keamanan + sapaan awal driver)
+            val initialChildCount = 2.coerceAtMost(binding.chatMessageContainer.childCount)
+            ChatBubbleHelper.renderMessages(
+                requireContext(),
+                binding.chatMessageContainer,
+                binding.chatScrollView,
+                messages,
+                keepFirstChildCount = initialChildCount
+            )
+        }
+    }
+
+    private fun sendLiveMessage(text: String) {
+        val uid = FirebaseRepository.currentUid()
+        if (uid == null || activeChatOrderId.isBlank()) {
+            Toast.makeText(requireContext(), "Menunggu koneksi ruang chat...", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val userMsg = ChatMessage(
+            orderId = activeChatOrderId,
+            senderId = uid,
+            senderName = FirebaseRepository.currentUser()?.displayName ?: "Customer",
+            senderRole = "customer",
+            text = text,
+            timestamp = System.currentTimeMillis()
+        )
+        FirebaseRepository.sendChatMessage(activeChatOrderId, userMsg) { sent ->
+            if (sent && isAdded) {
+                scheduleSimulatedDriverReply(activeChatOrderId)
+            }
+        }
+    }
+
+    private fun scheduleSimulatedDriverReply(orderId: String) {
+        timerHandler.postDelayed({
+            if (!isAdded || activeChatOrderId != orderId) return@postDelayed
+            val replies = listOf(
+                "Siap kak! Saya meluncur ke titik lokasi sekarang.",
+                "Baik kak, posisi saya sudah dekat sekitar 200 meter lagi.",
+                "Siap, saya tunggu di titik jemput depan pos ya kak.",
+                "Oke kak, siap laksanakan!"
+            )
+            val driverMsg = ChatMessage(
+                orderId = orderId,
+                senderId = OrderFragment.activeDriverId,
+                senderName = OrderFragment.activeDriverName,
+                senderRole = "driver",
+                text = replies.random(),
+                timestamp = System.currentTimeMillis()
+            )
+            FirebaseRepository.sendChatMessage(orderId, driverMsg)
+        }, 1200)
     }
 
     private fun startPostTripTimer() {
         if (OrderFragment.tripPhase == OrderFragment.TripPhase.TRIP_COMPLETED) {
             timerRunnable = object : Runnable {
                 override fun run() {
-                    if (OrderFragment.postTripSecondsLeft > 0 && isAdded) {
+                    if (OrderFragment.postTripSecondsLeft > 0 && isAdded && _binding != null) {
                         binding.tvDriverName.text = "${OrderFragment.activeDriverName} (⏱️ ${OrderFragment.postTripSecondsLeft}s tersisa)"
                         timerHandler.postDelayed(this, 1000)
-                    } else if (isAdded) {
+                    } else if (isAdded && _binding != null) {
                         binding.tvDriverName.text = "${OrderFragment.activeDriverName} (Sesi Chat Berakhir)"
                         binding.etChatMessage.isEnabled = false
                         binding.etChatMessage.hint = "Sesi chat 1 menit telah berakhir"
@@ -93,96 +168,11 @@ class ChatFragment : Fragment(R.layout.fragment_chat) {
         }
     }
 
-    private fun addUserMessageBubble(message: String) {
-        val bubbleLayout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.END
-            val params = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.END
-                bottomMargin = 24
-            }
-            layoutParams = params
-            setBackgroundResource(R.drawable.bg_bubble_user)
-            setPadding(32, 20, 32, 20)
-        }
-
-        val tvMessage = TextView(requireContext()).apply {
-            text = message
-            setTextColor(Color.WHITE)
-            textSize = 13f
-        }
-
-        val tvTime = TextView(requireContext()).apply {
-            text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-            setTextColor(Color.parseColor("#CCFFFFFF"))
-            textSize = 10f
-            gravity = Gravity.END
-        }
-
-        bubbleLayout.addView(tvMessage)
-        bubbleLayout.addView(tvTime)
-
-        binding.chatMessageContainer.addView(bubbleLayout)
-        binding.chatScrollView.post {
-            binding.chatScrollView.fullScroll(View.FOCUS_DOWN)
-        }
-    }
-
-    private fun simulateDriverReply() {
-        binding.root.postDelayed({
-            val replies = listOf(
-                "Siap kak! Saya meluncur ke titik lokasi sekarang.",
-                "Baik kak, posisi saya sudah dekat sekitar 200 meter lagi.",
-                "Siap, saya tunggu di titik jemput depan pos ya kak.",
-                "Oke kak, siap laksanakan!"
-            )
-            val driverMessage = replies.random()
-
-            val bubbleLayout = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.START
-                val params = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    gravity = Gravity.START
-                    bottomMargin = 24
-                }
-                layoutParams = params
-                setBackgroundResource(R.drawable.bg_bubble_driver)
-                setPadding(32, 20, 32, 20)
-            }
-
-            val tvMessage = TextView(requireContext()).apply {
-                text = driverMessage
-                setTextColor(Color.parseColor("#0B2530"))
-                textSize = 13f
-            }
-
-            val tvTime = TextView(requireContext()).apply {
-                text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                setTextColor(Color.parseColor("#8FA8B4"))
-                textSize = 10f
-                gravity = Gravity.END
-            }
-
-            bubbleLayout.addView(tvMessage)
-            bubbleLayout.addView(tvTime)
-
-            if (isAdded) {
-                binding.chatMessageContainer.addView(bubbleLayout)
-                binding.chatScrollView.post {
-                    binding.chatScrollView.fullScroll(View.FOCUS_DOWN)
-                }
-            }
-        }, 1200)
-    }
-
     override fun onDestroyView() {
+        chatListener?.remove()
+        chatListener = null
         timerRunnable?.let { timerHandler.removeCallbacks(it) }
         super.onDestroyView()
+        _binding = null
     }
 }

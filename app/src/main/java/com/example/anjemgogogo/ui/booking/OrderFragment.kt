@@ -23,7 +23,12 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.example.anjemgogogo.R
+import com.example.anjemgogogo.data.firebase.FirebaseRepository
+import com.example.anjemgogogo.data.model.ChatMessage
+import com.example.anjemgogogo.data.model.DriverLocation
+import com.example.anjemgogogo.data.model.OrderModel
 import com.example.anjemgogogo.databinding.FragmentOrderBinding
+import com.example.anjemgogogo.ui.chat.ChatBubbleHelper
 import com.example.anjemgogogo.utils.H3GeoUtils
 import com.google.android.gms.location.LocationServices
 import org.json.JSONObject
@@ -57,6 +62,8 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
     companion object {
         var tripPhase = TripPhase.IDLE
+        var activeOrderId = ""
+        var activeDriverId = "driver_ahmad_fauzi"
         var activeDriverName = "Ahmad Fauzi"
         var activePlateNumber = "H 2341 XY"
         var activeServiceName = "Anjem Motor"
@@ -69,6 +76,13 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     private lateinit var binding: FragmentOrderBinding
     private var selectedServiceType = "Motor" // "Motor" or "Kurir"
     private var isSatelliteMode = false // Toggle between Street & Satellite
+    private var lastDistanceKm: Double = 1.0
+    private var lastFare: Long = 7500L
+    private var fareDeductedForOrderId: String = ""
+
+    private var orderListener: FirebaseRepository.ListenerHandle? = null
+    private var driverLocListener: FirebaseRepository.ListenerHandle? = null
+    private var overlayChatListener: FirebaseRepository.ListenerHandle? = null
 
     // Dynamic coordinates chosen by user (Defaults to GPS)
     private var pickupGeoPoint = GeoPoint(-7.0475, 110.4072) // Gerbang Utama UNNES
@@ -174,108 +188,74 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         binding.btnOverlaySendChat.setOnClickListener {
             val text = binding.etOverlayChatMessage.text.toString().trim()
             if (text.isNotEmpty()) {
-                addOverlayUserMessageBubble(text)
+                sendOverlayLiveMessage(text)
                 binding.etOverlayChatMessage.setText("")
-                simulateOverlayDriverReply()
             }
         }
 
         binding.chipOverlayReply1.setOnClickListener {
-            addOverlayUserMessageBubble(binding.chipOverlayReply1.text.toString())
-            simulateOverlayDriverReply()
+            sendOverlayLiveMessage(binding.chipOverlayReply1.text.toString())
         }
 
         binding.chipOverlayReply2.setOnClickListener {
-            addOverlayUserMessageBubble(binding.chipOverlayReply2.text.toString())
-            simulateOverlayDriverReply()
+            sendOverlayLiveMessage(binding.chipOverlayReply2.text.toString())
         }
     }
 
-    private fun addOverlayUserMessageBubble(message: String) {
-        val bubbleLayout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.END
-            val params = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.END
-                bottomMargin = 16
+    private fun observeOverlayChat(orderId: String) {
+        if (orderId.isBlank()) return
+        overlayChatListener?.remove()
+        overlayChatListener = FirebaseRepository.observeChatMessages(orderId) { messages ->
+            if (!isAdded) return@observeChatMessages
+            ChatBubbleHelper.renderMessages(
+                requireContext(),
+                binding.chatOverlayMessageContainer,
+                binding.chatOverlayScrollView,
+                messages,
+                keepFirstChildCount = 0
+            )
+        }
+    }
+
+    private fun sendOverlayLiveMessage(message: String) {
+        val uid = FirebaseRepository.currentUid()
+        if (uid == null || activeOrderId.isBlank()) {
+            Toast.makeText(requireContext(), "Pesanan belum terhubung ke Firebase.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val msg = ChatMessage(
+            orderId = activeOrderId,
+            senderId = uid,
+            senderName = FirebaseRepository.currentUser()?.displayName ?: "Customer",
+            senderRole = "customer",
+            text = message,
+            timestamp = System.currentTimeMillis()
+        )
+        FirebaseRepository.sendChatMessage(activeOrderId, msg) { sent ->
+            if (sent && isAdded) {
+                simulateOverlayDriverReply(activeOrderId)
             }
-            layoutParams = params
-            setBackgroundResource(R.drawable.bg_bubble_user)
-            setPadding(28, 16, 28, 16)
-        }
-
-        val tvMessage = TextView(requireContext()).apply {
-            text = message
-            setTextColor(Color.WHITE)
-            textSize = 13f
-        }
-
-        val tvTime = TextView(requireContext()).apply {
-            text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-            setTextColor(Color.parseColor("#CCFFFFFF"))
-            textSize = 10f
-            gravity = Gravity.END
-        }
-
-        bubbleLayout.addView(tvMessage)
-        bubbleLayout.addView(tvTime)
-
-        binding.chatOverlayMessageContainer.addView(bubbleLayout)
-        binding.chatOverlayScrollView.post {
-            binding.chatOverlayScrollView.fullScroll(View.FOCUS_DOWN)
         }
     }
 
-    private fun simulateOverlayDriverReply() {
-        binding.root.postDelayed({
+    private fun simulateOverlayDriverReply(orderId: String) {
+        mainHandler.postDelayed({
+            if (!isAdded || activeOrderId != orderId) return@postDelayed
             val replies = listOf(
                 "Siap kak! Saya meluncur ke titik lokasi sekarang.",
                 "Baik kak, posisi saya sudah dekat sekitar 200 meter lagi.",
                 "Siap, saya tunggu di titik jemput depan pos ya kak.",
                 "Oke kak, siap laksanakan!"
             )
-            val driverMessage = replies.random()
-
-            val bubbleLayout = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.START
-                val params = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    gravity = Gravity.START
-                    bottomMargin = 16
-                }
-                layoutParams = params
-                setBackgroundResource(R.drawable.bg_bubble_driver)
-                setPadding(28, 16, 28, 16)
-            }
-
-            val tvMessage = TextView(requireContext()).apply {
-                text = driverMessage
-                setTextColor(Color.parseColor("#0B2530"))
-                textSize = 13f
-            }
-
-            val tvTime = TextView(requireContext()).apply {
-                text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                setTextColor(Color.parseColor("#8FA8B4"))
-                textSize = 10f
-                gravity = Gravity.END
-            }
-
-            bubbleLayout.addView(tvMessage)
-            bubbleLayout.addView(tvTime)
-
-            if (isAdded) {
-                binding.chatOverlayMessageContainer.addView(bubbleLayout)
-                binding.chatOverlayScrollView.post {
-                    binding.chatOverlayScrollView.fullScroll(View.FOCUS_DOWN)
-                }
-            }
+            val driverMsg = ChatMessage(
+                orderId = orderId,
+                senderId = activeDriverId,
+                senderName = activeDriverName,
+                senderRole = "driver",
+                text = replies.random(),
+                timestamp = System.currentTimeMillis()
+            )
+            FirebaseRepository.sendChatMessage(orderId, driverMsg)
         }, 1000)
     }
 
@@ -294,19 +274,94 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private fun startOrderMatchingWorkflow() {
+        val uid = FirebaseRepository.currentUid()
+        if (uid == null) {
+            Toast.makeText(requireContext(), "Silakan login terlebih dahulu!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         activeJemput = binding.spJemput.text.toString().trim()
         activeTujuan = binding.spTujuan.text.toString().trim()
         activeCatatan = binding.etCatatan.text.toString().trim()
         activeServiceName = if (selectedServiceType == "Motor") "Anjem Motor" else "Kurir / Titip Beli"
 
+        val driverIds = listOf("driver_ahmad_fauzi", "driver_bayu_pratama", "driver_rizki_mahendra", "driver_eko_prasetyo")
         val driverNames = listOf("Ahmad Fauzi", "Bayu Pratama", "Rizki Mahendra", "Eko Prasetyo")
         val plates = listOf("H 2341 XY", "H 5432 AB", "H 1289 ZC", "H 9876 KL")
-        val randomIdx = (0 until driverNames.size).random()
+        val randomIdx = (driverNames.indices).random()
+        activeDriverId = driverIds[randomIdx]
         activeDriverName = driverNames[randomIdx]
         activePlateNumber = plates[randomIdx]
+        binding.tvOverlayDriverName.text = "$activeDriverName (★ 4.9)"
 
-        tripPhase = TripPhase.WAITING_CONFIRMATION
-        showInitialConfirmationDialog()
+        val newOrder = OrderModel(
+            customerId = uid,
+            customerName = FirebaseRepository.currentUser()?.displayName ?: "Mahasiswa UNNES",
+            driverId = activeDriverId,
+            driverName = activeDriverName,
+            plateNumber = activePlateNumber,
+            serviceType = activeServiceName,
+            pickupName = activeJemput,
+            pickupLat = pickupGeoPoint.latitude,
+            pickupLng = pickupGeoPoint.longitude,
+            destName = activeTujuan,
+            destLat = destinationGeoPoint.latitude,
+            destLng = destinationGeoPoint.longitude,
+            notes = activeCatatan,
+            distanceKm = lastDistanceKm,
+            fare = lastFare,
+            paymentMethod = "KampusPay",
+            status = OrderModel.STATUS_WAITING
+        )
+
+        binding.btnPesan.isEnabled = false
+        FirebaseRepository.createOrder(newOrder) { result ->
+            if (!isAdded) return@createOrder
+            binding.btnPesan.isEnabled = true
+            result.onSuccess { created ->
+                activeOrderId = created.orderId
+                tripPhase = TripPhase.WAITING_CONFIRMATION
+                observeLiveOrderAndDriver()
+                observeOverlayChat(created.orderId)
+                showInitialConfirmationDialog()
+            }.onFailure { err ->
+                Toast.makeText(requireContext(), "Gagal membuat pesanan: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun observeLiveOrderAndDriver() {
+        if (activeOrderId.isBlank()) return
+        orderListener?.remove()
+        orderListener = FirebaseRepository.observeOrder(activeOrderId) { order ->
+            if (!isAdded || order == null) return@observeOrder
+            when (order.status) {
+                OrderModel.STATUS_CANCELLED -> {
+                    if (tripPhase != TripPhase.IDLE) {
+                        resetTripState()
+                    }
+                }
+            }
+        }
+
+        driverLocListener?.remove()
+        driverLocListener = FirebaseRepository.observeDriverLocation(activeDriverId) { loc ->
+            if (!isAdded || loc == null || !isTrackingActive) return@observeDriverLocation
+            if (loc.lat == 0.0 && loc.lng == 0.0) return@observeDriverLocation
+
+            val currentPos = GeoPoint(loc.lat, loc.lng)
+            if (markerDriver == null) {
+                markerDriver = Marker(binding.osmMapView).apply {
+                    title = "🛵 Driver: ${loc.driverName} (${loc.plateNumber})"
+                }
+            }
+            if (!binding.osmMapView.overlays.contains(markerDriver)) {
+                binding.osmMapView.overlays.add(markerDriver)
+            }
+            markerDriver?.position = currentPos
+            binding.osmMapView.controller.animateTo(currentPos)
+            binding.osmMapView.invalidate()
+        }
     }
 
     private fun showInitialConfirmationDialog() {
@@ -333,6 +388,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
                 .setPositiveButton("🚀 Mulai Perjalanan") { dialog, _ ->
                     dialog.dismiss()
                     tripPhase = TripPhase.DRIVER_TO_PICKUP
+                    FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_DRIVER_TO_PICKUP)
                     startRandomDriverToPickupAnimation()
                 }
                 .setNeutralButton("💬 Chat Driver") { dialog, _ ->
@@ -340,6 +396,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
                     binding.chatOverlayContainer.visibility = View.VISIBLE
                 }
                 .setNegativeButton("❌ Batalkan Pesanan") { dialog, _ ->
+                    FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_CANCELLED)
                     resetTripState()
                     dialog.dismiss()
                     Toast.makeText(requireContext(), "Pesanan dibatalkan.", Toast.LENGTH_SHORT).show()
@@ -388,9 +445,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
                 }
 
                 val currentPos = pickupWaypoints[stepIndex]
-                markerDriver?.position = currentPos
-                binding.osmMapView.controller.animateTo(currentPos)
-                binding.osmMapView.invalidate()
+                publishDriverPositionToFirebase(currentPos, OrderModel.STATUS_DRIVER_TO_PICKUP)
 
                 binding.tvMapH3Info.text = "🛵 Driver $activeDriverName menuju titik jemput..."
 
@@ -404,6 +459,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
     private fun startTripToDestinationAnimation() {
         tripPhase = TripPhase.TRIP_TO_DESTINATION
+        FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_ON_TRIP)
         if (currentWaypoints.isEmpty()) {
             currentWaypoints = listOf(pickupGeoPoint, destinationGeoPoint)
         }
@@ -430,9 +486,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
                 }
 
                 val currentPos = currentWaypoints[stepIndex]
-                markerDriver?.position = currentPos
-                binding.osmMapView.controller.animateTo(currentPos)
-                binding.osmMapView.invalidate()
+                publishDriverPositionToFirebase(currentPos, OrderModel.STATUS_ON_TRIP)
 
                 val percent = (stepIndex + 1) * 100 / currentWaypoints.size
                 binding.tvMapH3Info.text = "🛵 Perjalanan ke Tujuan • $percent%"
@@ -445,10 +499,32 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         trackingHandler.post(trackingRunnable!!)
     }
 
+    private fun publishDriverPositionToFirebase(pos: GeoPoint, phase: String) {
+        val location = DriverLocation(
+            driverId = activeDriverId,
+            driverName = activeDriverName,
+            plateNumber = activePlateNumber,
+            lat = pos.latitude,
+            lng = pos.longitude,
+            h3Index = H3GeoUtils.getH3Index(pos.latitude, pos.longitude),
+            phase = phase,
+            orderId = activeOrderId,
+            updatedAt = System.currentTimeMillis()
+        )
+        FirebaseRepository.updateDriverLocation(location)
+    }
+
     private fun onTripCompleted() {
         stopLiveDriverAnimation()
         tripPhase = TripPhase.TRIP_COMPLETED
         postTripSecondsLeft = 30
+        FirebaseRepository.updateOrderStatus(activeOrderId, OrderModel.STATUS_COMPLETED)
+
+        val uid = FirebaseRepository.currentUid()
+        if (uid != null && activeOrderId.isNotBlank() && fareDeductedForOrderId != activeOrderId) {
+            fareDeductedForOrderId = activeOrderId
+            FirebaseRepository.adjustBalance(uid, -lastFare)
+        }
 
         binding.tvMapH3Info.text = "🎉 Perjalanan Selesai! Terima kasih."
 
@@ -871,11 +947,26 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
         val baseFare = if (selectedServiceType == "Motor") 5000 else 7000
         val perKmRate = if (selectedServiceType == "Motor") 2500 else 3500
         val totalPrice = baseFare + (distanceKm * perKmRate).toInt()
+        lastDistanceKm = roundedDist.toDoubleOrNull() ?: distanceKm
+        lastFare = totalPrice.toLong()
         val formattedPrice = String.format(Locale("id", "ID"), "Rp %,d", totalPrice)
 
         binding.tvJarak.text = "Estimasi Jarak: $roundedDist km (Real Map)"
         binding.tvWaktu.text = "Waktu tempuh sekitar $minutes menit"
         binding.tvHarga.text = formattedPrice
+    }
+
+    override fun onDestroyView() {
+        orderListener?.remove()
+        orderListener = null
+        driverLocListener?.remove()
+        driverLocListener = null
+        overlayChatListener?.remove()
+        overlayChatListener = null
+        stopLiveDriverAnimation()
+        postTripRunnable?.let { postTripHandler.removeCallbacks(it) }
+        pendingDebounceRunnable?.let { mainHandler.removeCallbacks(it) }
+        super.onDestroyView()
     }
 
     private fun generateRoadInterpolatedWaypoints(start: GeoPoint, end: GeoPoint): List<GeoPoint> {

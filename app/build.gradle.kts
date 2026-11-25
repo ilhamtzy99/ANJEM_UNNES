@@ -55,7 +55,11 @@ dependencies {
     // Firebase (BOM / Bill of Materials)
     implementation(platform("com.google.firebase:firebase-bom:32.7.4"))
     implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
+
+    // Google Sign-In
+    implementation("com.google.android.gms:play-services-auth:21.0.0")
 
     // OpenStreetMap (OSMDroid - Free Real Street Map Engine)
     implementation("org.osmdroid:osmdroid-android:6.1.20")
