@@ -1,13 +1,19 @@
 package com.example.anjemgogogo.utils
 
-import kotlin.math.*
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 object H3GeoUtils {
     // Simulasi H3 Spatial Grid Indexing (Resolusi 9: ~100m precision)
     fun getH3Index(lat: Double, lng: Double): String {
         val latCell = (lat * 1000).toInt()
         val lngCell = (lng * 1000).toInt()
-        return "89${Math.abs(latCell)}${Math.abs(lngCell)}"
+        return "89${abs(latCell)}${abs(lngCell)}"
     }
 
     // Menghitung estimasi jarak berbasis Haversine (menyimulasikan H3 Grid Distance)
@@ -19,7 +25,7 @@ object H3GeoUtils {
         val c = 2 * atan2(sqrt(a), sqrt(1 - a))
         val distance = r * c
         val estimatedKm = if (distance < 0.1) 0.8 else distance
-        return String.format(java.util.Locale.US, "%.1f", estimatedKm).toDouble()
+        return String.format(Locale.US, "%.1f", estimatedKm).toDouble()
     }
 
     // Hitung jumlah langkah heksagonal (grid steps)

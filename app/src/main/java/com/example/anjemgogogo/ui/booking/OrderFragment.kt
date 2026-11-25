@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
-import android.graphics.Color
 import android.graphics.Paint
 import android.location.Geocoder
 import android.os.Bundle
@@ -17,6 +16,8 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.toColorInt
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.example.anjemgogogo.R
@@ -384,7 +385,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
     }
 
     private fun showInitialConfirmationDialog() {
-        if (!isAdded || isDetached || _binding == null || binding.chatOverlayContainer.visibility == View.VISIBLE) return
+        if (!isAdded || isDetached || _binding == null || binding.chatOverlayContainer.isVisible) return
 
         val message = """
             Driver $activeServiceName Ditemukan!
@@ -983,7 +984,7 @@ class OrderFragment : Fragment(R.layout.fragment_order) {
 
         routeLine = Polyline().apply {
             setPoints(waypoints)
-            outlinePaint.color = Color.parseColor("#0088CC")
+            outlinePaint.color = "#0088CC".toColorInt()
             outlinePaint.strokeWidth = 12f
             outlinePaint.strokeCap = Paint.Cap.ROUND
         }

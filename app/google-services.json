@@ -1,27 +1,37 @@
 {
   "project_info": {
-    "project_number": "1234567890",
-    "firebase_url": "https://dummy-project.firebaseio.com",
-    "project_id": "dummy-project",
-    "storage_bucket": "dummy-project.appspot.com"
+    "project_number": "851542723929",
+    "firebase_url": "https://unnesanjemuhuy-default-rtdb.firebaseio.com",
+    "project_id": "unnesanjemuhuy",
+    "storage_bucket": "unnesanjemuhuy.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1234567890:android:1234567890abcdef",
+        "mobilesdk_app_id": "1:851542723929:android:d9c8bd90f6fdcbf76c1048",
         "android_client_info": {
           "package_name": "com.example.anjemgogogo"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "851542723929-8t2d4i4dvusuv725vgnrvmjr93vq1014.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyDummyKeyForCompilation12345678"
+          "current_key": "AIzaSyBSQSag5fGMNW0hewWCSJhxVckgyoshR20"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "851542723929-8t2d4i4dvusuv725vgnrvmjr93vq1014.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
